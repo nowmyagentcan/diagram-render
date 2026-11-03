@@ -5,13 +5,17 @@ mod common;
 
 use std::fs;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::*;
 use serde_json::{Value, json};
 
-/// Renders the fixture `name` from a fresh copy: the JSON result and the SVG.
+/// Renders the fixture `name` from a fresh copy in a folder of its own (tests run at once): the
+/// JSON result and the SVG.
 fn render(name: &str, extra: &[&str]) -> (Value, String) {
-    let dir = folder(&format!("dot-{name}"));
+    static RUNS: AtomicUsize = AtomicUsize::new(0);
+    let run = RUNS.fetch_add(1, Ordering::Relaxed);
+    let dir = folder(&format!("dot-{name}-{run}"));
     let file = format!("{name}.dot");
     fs::copy(format!("tests/fixtures/dot/{file}"), dir.join(&file)).unwrap();
     let (code, out, err) = run_in(&dir, &[&[file.as_str(), "--json"], extra].concat(), b"");
