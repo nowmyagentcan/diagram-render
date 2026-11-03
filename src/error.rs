@@ -183,6 +183,15 @@ impl Warning {
         }
     }
 
+    /// `edge_style_approximated` or `arrow_approximated`.
+    pub fn drawn_as(code: &'static str, name: &str, fallback: &str) -> Self {
+        Self {
+            code,
+            message: format!("Drew {name} as {fallback}."),
+            line: None,
+        }
+    }
+
     pub fn remote_image_not_fetched(url: &str) -> Self {
         let cut: String = url.chars().take(80).collect();
         let cut = if cut.len() < url.len() {

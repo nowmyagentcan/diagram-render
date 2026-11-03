@@ -258,8 +258,8 @@ fn cells_with_missing_parents_or_terminals_are_reported_with_their_line() {
     }
     let svg = fs::read_to_string(dir.join("m.svg")).unwrap();
     assert!(svg.contains(">Orphan<"), "{svg}");
-    // The edge with a point to fall back on ends there.
-    assert!(svg.contains(",300,30") || svg.contains(" 300,30"), "{svg}");
+    // The edge with a point to fall back on ends there, less its arrow.
+    assert!(svg.contains(r#"<path d="M120 30 L293.63 30""#), "{svg}");
 }
 
 #[test]
@@ -362,7 +362,14 @@ fn the_page_background_fills_the_drawing_unless_another_is_asked_for() {
 }
 
 /// The fixtures that show every shape, style and container.
-const FIXTURES: [&str; 4] = ["shapes", "styles", "containers", "images"];
+const FIXTURES: [&str; 6] = [
+    "shapes",
+    "styles",
+    "containers",
+    "images",
+    "edges",
+    "arrows",
+];
 
 #[test]
 fn every_fixture_renders_to_svg_and_png_at_the_svg_size() {
@@ -474,5 +481,51 @@ fn remote_images_are_links_in_svg_and_placeholders_in_png() {
     assert_eq!(
         v["warnings"],
         json!([{"code": "remote_image_not_fetched", "message": "Image https://example.org/logo.png isn't fetched (the tool works offline); drew a placeholder."}])
+    );
+}
+
+#[test]
+fn edges_route_as_draw_io_routes_them() {
+    let svg = svg_of("edges.drawio", &[]);
+    for want in [
+        // Orthogonal: out of the side and into the top, the end cut back for its arrow.
+        r#"<path d="M540 45 L710 45 L710 73.63""#,
+        // Rounded corners, a waypoint the segments turn at, and a fixed exit and entry.
+        r#"<path d="M120 185 L280 185 Q290 185 290 195 L290 213.63""#,
+        r#"<path d="M490 210 L490 280 L600 280 L600 245 L653.63 245""#,
+        r#"<path d="M490 630 L490 677.5 L653.63 677.5""#,
+        // Entity relation: out, across and in, with its crow's feet.
+        r#"<path d="M540 465 L570 465 L630 525 L644.5 525""#,
+        // A curve through the waypoint, and lines ending on an ellipse and a rhombus.
+        r#"<path d="M98.95 630 Q180 700 233.93 682.84""#,
+        r#"<path d="M103.03 810.03 L143.03 845.76""#,
+        r#"<path d="M303.53 801.18 L353.04 845.74""#,
+    ] {
+        assert!(svg.contains(want), "{want}: {svg}");
+    }
+}
+
+#[test]
+fn unknown_edge_styles_and_arrows_are_drawn_as_the_nearest_known() {
+    let cells = format!(
+        r#"{}{}
+        <mxCell id="e1" style="edgeStyle=isometricEdgeStyle;endArrow=fancyArrow;" edge="1" parent="1" source="a" target="b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=isometricEdgeStyle;startArrow=fancyArrow;" edge="1" parent="1" source="b" target="a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>"#,
+        vertex("a", "A", 0, 0, ""),
+        vertex("b", "B", 300, 100, ""),
+    );
+    let dir = folder("drawio-unknown-edges");
+    let (code, v) = in_dir(&dir, "u.drawio", page(&cells).as_bytes(), &[]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        v["warnings"],
+        json!([
+            {"code": "edge_style_approximated", "message": "Drew isometricEdgeStyle as straight lines."},
+            {"code": "arrow_approximated", "message": "Drew fancyArrow as classic."},
+        ])
     );
 }

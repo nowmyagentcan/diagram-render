@@ -41,6 +41,10 @@ impl Rect {
     pub fn cy(&self) -> f64 {
         self.y + self.h / 2.0
     }
+
+    pub fn contains(&self, (x, y): P) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
 }
 
 /// A vertex as drawn: where it is and its style.
@@ -459,18 +463,39 @@ impl Drawing {
             .iter()
             .map(|p| (p.0 + origin.0, p.1 + origin.1))
             .collect();
-        Some(edges::route(style, source, target, &points))
+        let mut notes = vec![];
+        let route = edges::route(style, source, target, &points, &mut notes);
+        self.note(notes);
+        Some(route)
     }
 
     fn edge(&mut self, c: &Cell, style: &Style, points: &[P]) {
         for &p in points {
             self.include(p);
         }
+        // Markers reach past the ends, by up to their size and the stroke.
+        let sw = style.num("strokeWidth", 1.0);
+        for (arrow, size, end) in [
+            ("startArrow", "startSize", points[0]),
+            ("endArrow", "endSize", points[points.len() - 1]),
+        ] {
+            if style.get(arrow).is_some() {
+                let r = style.num(size, 6.0) + sw + 1.0;
+                self.include_rect(Rect {
+                    x: end.0 - r,
+                    y: end.1 - r,
+                    w: 2.0 * r,
+                    h: 2.0 * r,
+                });
+            }
+        }
         let mut out = String::new();
-        edges::draw(&mut out, style, points);
+        let mut notes = vec![];
+        edges::draw(&mut out, style, points, &mut notes);
+        self.note(notes);
         self.body += &out;
         if !c.label.trim().is_empty() {
-            let anchor = edges::along(points, &read::Geo::default());
+            let anchor = edges::along(points, &c.geo);
             let at = Rect {
                 x: anchor.0,
                 y: anchor.1,
@@ -478,6 +503,16 @@ impl Drawing {
                 h: 0.0,
             };
             self.label(&c.label, style, at, true);
+        }
+    }
+
+    /// Warns about each edge style and arrow drawn as another once.
+    fn note(&mut self, notes: Vec<edges::Approximated>) {
+        for (code, name, fallback) in notes {
+            let w = Warning::drawn_as(code, &name, fallback);
+            if !self.warnings.contains(&w) {
+                self.warnings.push(w);
+            }
         }
     }
 
