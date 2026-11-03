@@ -81,6 +81,21 @@ pub struct Png {
     pub height: u32,
 }
 
+/// `bytes` with the size its header gives, when they are a PNG.
+pub fn sized(bytes: Vec<u8>) -> Option<Png> {
+    let header = bytes.get(..24)?;
+    if !header.starts_with(b"\x89PNG\r\n\x1a\n") || &header[12..16] != b"IHDR" {
+        return None;
+    }
+    let side = |at: usize| u32::from_be_bytes(header[at..at + 4].try_into().unwrap());
+    let (width, height) = (side(16), side(20));
+    Some(Png {
+        bytes,
+        width,
+        height,
+    })
+}
+
 /// What the font choices found: families drawn with another font, and whether the computer's
 /// fonts are loaded.
 #[derive(Default)]

@@ -428,6 +428,14 @@ impl Error {
         )
     }
 
+    pub fn network_needed() -> Self {
+        Self::new(
+            "network_needed",
+            "This D2 diagram uses remote images, and the network is off.",
+            "Rerun with --allow-network, or render SVG (which links them).",
+        )
+    }
+
     pub fn image_too_large(width: u32, height: u32) -> Self {
         Self::new(
             "image_too_large",

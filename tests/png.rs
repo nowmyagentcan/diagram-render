@@ -170,3 +170,193 @@ fn the_background_is_the_diagrams_unless_another_is_asked_for() {
     let (_, png) = render(&dir, "t.dot", tinted, &["--to", "png"]);
     assert_eq!(corner(&png), [0xfd, 0xf6, 0xe3, 255]);
 }
+
+/// Copies the fixture `tests/fixtures/{kind}/{file}` into `dir`; its source.
+fn fixture(dir: &Path, kind: &str, file: &str) -> Vec<u8> {
+    let source = fs::read(Path::new("tests/fixtures").join(kind).join(file)).unwrap();
+    fs::write(dir.join(file), &source).unwrap();
+    source
+}
+
+/// Renders `file` to SVG and to PNG at scales 1 and 2: the PNG sizes are the SVG's (±1 px)
+/// and twice it, and the files are 8-bit RGBA.
+fn png_sizes_follow_the_svg(dir: &Path, file: &str, source: &[u8]) {
+    let (svg, _) = render(dir, file, source, &[]);
+    for scale in [1.0, 2.0] {
+        let s = scale.to_string();
+        let (v, png) = render(dir, file, source, &["--to", "png", "--scale", &s]);
+        assert_eq!(v["scale"], scale, "{file}");
+        for k in ["width", "height"] {
+            let want = svg[k].as_f64().unwrap() * scale;
+            assert!(
+                (v[k].as_f64().unwrap() - want).abs() <= 1.0,
+                "{file} {k} at {s}: {v}"
+            );
+        }
+        assert_eq!(&png[24..26], &[8, 6], "{file}");
+        let pixmap = Pixmap::decode_png(&png).unwrap();
+        assert_eq!(
+            (pixmap.width(), pixmap.height()),
+            (
+                v["width"].as_u64().unwrap() as u32,
+                v["height"].as_u64().unwrap() as u32
+            )
+        );
+    }
+}
+
+#[test]
+fn mermaid_pngs_are_drawn_by_merman_at_the_svg_size() {
+    let dir = folder("png-mermaid");
+    for family in ["flowchart", "sequence", "class", "state", "er"] {
+        let file = format!("{family}.mmd");
+        let source = fixture(&dir, "mermaid", &file);
+        png_sizes_follow_the_svg(&dir, &file, &source);
+    }
+    let (v, png) = render(
+        &dir,
+        "f.mmd",
+        b"graph TD\n  A --> B\n",
+        &["--to", "png", "--background", "transparent"],
+    );
+    assert_eq!((corner(&png), warnings(&v)), ([0, 0, 0, 0], vec![]));
+    let (_, png) = render(
+        &dir,
+        "f.mmd",
+        b"graph TD\n  A --> B\n",
+        &["--to", "png", "--background", "#336699"],
+    );
+    assert_eq!(corner(&png), [0x33, 0x66, 0x99, 255]);
+    let (_, png) = render(&dir, "f.mmd", b"graph TD\n  A --> B\n", &["--to", "png"]);
+    assert_eq!(corner(&png), [255, 255, 255, 255]);
+}
+
+#[test]
+fn a_mermaid_label_outside_the_bundled_fonts_uses_the_computers() {
+    let dir = folder("png-mermaid-cjk");
+    let (v, _) = render(
+        &dir,
+        "c.mmd",
+        "graph TD\n  A[漢字 ok] --> B\n".as_bytes(),
+        &["--to", "png"],
+    );
+    assert_eq!(
+        v["warnings"],
+        serde_json::json!([{"code": "font_fallback", "message": "Some characters aren't in the bundled fonts (漢字); this computer's fonts drew them, so the PNG can differ between computers."}])
+    );
+    // The SVG names the families; the viewer's fonts draw them.
+    let (v, _) = render(
+        &dir,
+        "c.mmd",
+        "graph TD\n  A[漢字 ok] --> B\n".as_bytes(),
+        &[],
+    );
+    assert_eq!(warnings(&v), Vec::<&str>::new());
+}
+
+#[test]
+fn d2_pngs_are_drawn_by_d2_at_the_svg_size() {
+    let dir = folder("png-d2");
+    for file in ["containers.d2", "sql_table.d2", "sequence.d2", "sketch.d2"] {
+        let source = fixture(&dir, "d2", file);
+        png_sizes_follow_the_svg(&dir, file, &source);
+    }
+    // d2 keeps its theme's background, so the PNG is opaque.
+    let (v, png) = render(
+        &dir,
+        "a.d2",
+        b"a -> b",
+        &["--to", "png", "--background", "transparent"],
+    );
+    assert_eq!(warnings(&v), ["background_ignored"]);
+    assert_eq!(corner(&png)[3], 255);
+    // Its own fonts have CJK, and are the same everywhere: no warning.
+    let (v, _) = render(&dir, "c.d2", "a: 漢字 ok".as_bytes(), &["--to", "png"]);
+    assert_eq!(warnings(&v), Vec::<&str>::new());
+}
+
+#[test]
+fn a_d2_png_needs_the_network_for_remote_images() {
+    let dir = folder("png-d2-network");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://{}/pixel.png", listener.local_addr().unwrap());
+    let source = format!("logo: {{\n  shape: image\n  icon: {url}\n}}\n");
+    fs::write(dir.join("r.d2"), &source).unwrap();
+    let (code, out, _) = run_in(&dir, &["r.d2", "--to", "png", "--json"], b"");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        (code, v["error"]["code"].as_str()),
+        (1, Some("network_needed")),
+        "{out}"
+    );
+    assert_eq!(
+        v["error"]["message"],
+        "This D2 diagram uses remote images, and the network is off."
+    );
+    assert!(listener.accept().is_err(), "no request reached the server");
+    assert!(!dir.join("r.png").exists());
+    // With the network, d2 fetches the image for the PNG, and only for it.
+    listener.set_nonblocking(false).unwrap();
+    let pixel = fs::read("tests/fixtures/d2/pixel.png").unwrap();
+    let server = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let (mut conn, _) = listener.accept().unwrap();
+        let mut request = vec![0; 4096];
+        let n = conn.read(&mut request).unwrap();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            pixel.len()
+        );
+        conn.write_all(&[head.as_bytes(), &pixel].concat()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        (
+            String::from_utf8_lossy(&request[..n]).into_owned(),
+            listener.accept().is_err(),
+        )
+    });
+    let (v, _) = render(
+        &dir,
+        "r.d2",
+        source.as_bytes(),
+        &["--to", "png", "--allow-network"],
+    );
+    assert_eq!(warnings(&v), Vec::<&str>::new());
+    let (request, once) = server.join().unwrap();
+    assert!(request.starts_with("GET /pixel.png "), "{request}");
+    assert!(once, "one request");
+}
+
+#[test]
+fn mermaid_and_d2_pngs_over_the_limits_are_drawn_smaller() {
+    let dir = folder("png-engine-limits");
+    let chain: Vec<String> = (0..40).map(|i| format!("n{i}")).collect();
+    let mermaid = format!("graph LR\n  {}\n", chain.join(" --> "));
+    let d2 = format!("direction: right\n{}\n", chain.join(" -> "));
+    for (file, source) in [("w.mmd", mermaid), ("w.d2", d2)] {
+        let (svg, _) = render(&dir, file, source.as_bytes(), &[]);
+        let (v, _) = render(
+            &dir,
+            file,
+            source.as_bytes(),
+            &["--to", "png", "--scale", "8"],
+        );
+        assert_eq!(warnings(&v), ["scale_reduced"], "{file}");
+        let scale = v["scale"].as_f64().unwrap();
+        assert!(
+            scale < 8.0 && v["width"].as_u64().unwrap() <= 16384,
+            "{file}: {v}"
+        );
+        // d2's PNG has the diagram's own size, which its SVG rounds to a whole pixel.
+        let slack = if file.ends_with("d2") {
+            1.0 + scale
+        } else {
+            1.0
+        };
+        let want = svg["width"].as_f64().unwrap() * scale;
+        assert!(
+            (v["width"].as_f64().unwrap() - want).abs() <= slack,
+            "{file}: {v}"
+        );
+    }
+}

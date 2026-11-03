@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use crate::detect::Format;
 use crate::error::{Error, Warning};
 use crate::input::Lines;
+use crate::output::To;
 use crate::raster::{self, Png};
 use crate::{d2, dot, mermaid};
 
@@ -108,7 +109,8 @@ impl Engine {
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            for key in ["SystemRoot", "TEMP", "TMP"] {
+            // merman finds the computer's fonts through WINDIR.
+            for key in ["SystemRoot", "TEMP", "TMP", "WINDIR"] {
                 if let Some(value) = env::var_os(key) {
                     cmd.env(key, value);
                 }
@@ -207,6 +209,8 @@ pub struct Task<'a> {
     pub page: Option<&'a str>,
     /// Whether D2 may fetch remote images.
     pub allow_network: bool,
+    /// What the run makes in the end.
+    pub to: To,
 }
 
 /// An engine's SVG and what it warned about.
@@ -240,15 +244,19 @@ pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Render
     }
 }
 
-/// The PNG at `scale` of `svg`, which `render` made.
+/// The PNG at `scale` of `svg`, which `render` made: drawn by merman or d2 for their own
+/// diagrams, else by resvg.
 pub fn png(
     format: Format,
+    engine: &mut Engine,
+    task: &Task,
     svg: &str,
     scale: f64,
     warnings: &mut Vec<Warning>,
 ) -> Result<Png, Error> {
     match format {
-        Format::Mermaid | Format::D2 => Err(Error::internal("PNG output isn't built in yet")),
+        Format::Mermaid => mermaid::png(engine, task, scale, warnings),
+        Format::D2 => d2::png(engine, task, svg, scale),
         // Graphviz measures a family it has no widths for as Times.
         _ => raster::png(svg, scale, raster::SERIF, warnings),
     }

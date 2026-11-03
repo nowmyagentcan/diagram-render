@@ -472,6 +472,7 @@ fn run(command: Command, args: Args) -> u8 {
         background: args.background.as_deref(),
         page: args.page.as_deref(),
         allow_network: args.allow_network,
+        to: target.as_ref().map_or(To::Svg, |t| t.1),
     };
     let format = diagram.format;
     let done = match target {
@@ -489,11 +490,13 @@ fn run(command: Command, args: Args) -> u8 {
                     (svg.into_bytes(), width, height, None)
                 }
                 To::Png => {
+                    // d2 sizes its PNG by the diagram's own size, which its SVG rounds.
+                    let pad = if format == Format::D2 { 1.0 } else { 0.0 };
                     let (width, height) = svg::css_size(&svg);
                     let scale = args.scale.unwrap_or(2.0);
-                    let (scale, reduced) = raster::fit(width, height, scale)?;
+                    let (scale, reduced) = raster::fit(width + pad, height + pad, scale)?;
                     warnings.extend(reduced);
-                    let png = engine::png(format, &svg, scale, &mut warnings)?;
+                    let png = engine::png(format, &mut engine, &task, &svg, scale, &mut warnings)?;
                     (png.bytes, png.width, png.height, Some(scale))
                 }
             };
