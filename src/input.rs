@@ -117,6 +117,10 @@ impl<'a> Lines<'a> {
         Self { text, starts }
     }
 
+    pub fn text(&self) -> &'a str {
+        self.text
+    }
+
     /// Line `n` (from 1) without its line end; empty past the last line.
     pub fn line(&self, n: usize) -> &'a str {
         let Some(&start) = self.starts.get(n.wrapping_sub(1)) else {

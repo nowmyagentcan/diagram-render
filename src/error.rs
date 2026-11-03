@@ -135,6 +135,33 @@ impl Warning {
         }
     }
 
+    pub fn pages_more(input: &str, n: usize, first: &str) -> Self {
+        Self {
+            code: "pages_more",
+            message: format!(
+                "{input} has {n} pages; rendered page 1 ({first}). Use --page for another."
+            ),
+            line: None,
+        }
+    }
+
+    pub fn di_reference_missing(id: &str, reference: &str, line: usize) -> Self {
+        Self {
+            code: "di_reference_missing",
+            message: format!("Diagram shape {id} points to {reference}, which isn't in the model."),
+            line: Some(line),
+        }
+    }
+
+    /// `element_skipped` or `edge_skipped`: `kind` is what the item is, such as `edge`.
+    pub fn skipped(code: &'static str, kind: &str, id: &str, reason: &str, line: usize) -> Self {
+        Self {
+            code,
+            message: format!("Skipped {kind} {id}: {reason}."),
+            line: Some(line),
+        }
+    }
+
     pub fn json(&self) -> Value {
         let mut w = json!({"code": self.code, "message": self.message});
         if let Some(line) = self.line {
@@ -416,6 +443,33 @@ impl Error {
             "render_failed",
             format!("{engine} couldn't render this diagram: {}.", clause(said)),
             format!("Run diagram-render check {input}, or --debug for the engine's full output."),
+        )
+    }
+
+    /// `names`: every page's, of which the first 10 are listed.
+    pub fn page_not_found(input: &str, page: &str, names: &[&str]) -> Self {
+        let more = if names.len() > 10 { ", …" } else { "" };
+        let list = names[..names.len().min(10)].join(", ");
+        Self::new(
+            "page_not_found",
+            format!("{input} has no page {page}; it has: {list}{more}."),
+            "Pass --page with one of those, or leave it out for the first.",
+        )
+    }
+
+    pub fn no_diagram_layout() -> Self {
+        Self::new(
+            "no_diagram_layout",
+            "This BPMN file has no diagram layout (no BPMNDiagram section).",
+            "Open it in a BPMN modeler (such as Camunda Modeler) and save it to add one.",
+        )
+    }
+
+    pub fn too_many_elements(n: usize, limit: usize) -> Self {
+        Self::new(
+            "too_many_elements",
+            format!("This diagram has {n} elements; the limit is {limit}."),
+            "Split it into smaller diagrams.",
         )
     }
 

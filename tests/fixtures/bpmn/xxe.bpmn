@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE definitions [
+  <!ENTITY secret SYSTEM "file:///etc/passwd">
+]>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="xxe">
+  <process id="p">
+    <task id="t" name="&secret;"/>
+  </process>
+</definitions>

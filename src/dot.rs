@@ -26,6 +26,7 @@ pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     Ok(Rendered {
         svg: first.as_bytes().to_vec(),
         warnings: said.warnings,
+        ..Rendered::default()
     })
 }
 

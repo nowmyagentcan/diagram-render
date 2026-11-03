@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="broken">
+  <bpmn:process id="p">
+    <bpmn:task id="t1" name="Café 漢字"></bpmn:tsk>
+  </bpmn:process>
+</bpmn:definitions>

@@ -86,6 +86,7 @@ dependencies = [
  "lexopt",
  "quick-xml",
  "resvg",
+ "roxmltree 0.21.2",
  "serde_json",
  "skrifa",
  "windows",

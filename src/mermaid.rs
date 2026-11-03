@@ -13,7 +13,7 @@ pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     let svg = run(engine, task, &["--format", "svg"], &fonts)?;
     Ok(Rendered {
         svg,
-        warnings: vec![],
+        ..Rendered::default()
     })
 }
 

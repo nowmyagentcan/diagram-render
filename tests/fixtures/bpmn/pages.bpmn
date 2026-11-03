@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="pages" targetNamespace="http://example.com/bpmn">
+  <bpmn:process id="order" isExecutable="false">
+    <bpmn:startEvent id="order_start" name="Order received">
+      <bpmn:outgoing>order_f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="order_check" name="Check the order">
+      <bpmn:incoming>order_f1</bpmn:incoming>
+      <bpmn:outgoing>order_f2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="order_end" name="Order checked">
+      <bpmn:incoming>order_f2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="order_f1" sourceRef="order_start" targetRef="order_check" />
+    <bpmn:sequenceFlow id="order_f2" sourceRef="order_check" targetRef="order_end" />
+  </bpmn:process>
+  <bpmn:process id="ship" isExecutable="false">
+    <bpmn:startEvent id="ship_start" name="Order checked">
+      <bpmn:outgoing>ship_f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="ship_pack" name="Pack the parcel">
+      <bpmn:incoming>ship_f1</bpmn:incoming>
+      <bpmn:outgoing>ship_f2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="ship_send" name="Hand it to the courier">
+      <bpmn:incoming>ship_f2</bpmn:incoming>
+      <bpmn:outgoing>ship_f3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="ship_end" name="Shipped">
+      <bpmn:incoming>ship_f3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="ship_f1" sourceRef="ship_start" targetRef="ship_pack" />
+    <bpmn:sequenceFlow id="ship_f2" sourceRef="ship_pack" targetRef="ship_send" />
+    <bpmn:sequenceFlow id="ship_f3" sourceRef="ship_send" targetRef="ship_end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="order_diagram" name="Order">
+    <bpmndi:BPMNPlane id="order_plane" bpmnElement="order">
+      <bpmndi:BPMNShape id="order_start_di" bpmnElement="order_start">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="133" y="145" width="75" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="order_check_di" bpmnElement="order_check">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="order_end_di" bpmnElement="order_end">
+        <dc:Bounds x="392" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="375" y="145" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="order_f1_di" bpmnElement="order_f1">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="order_f2_di" bpmnElement="order_f2">
+        <di:waypoint x="340" y="120" />
+        <di:waypoint x="392" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="ship_diagram" name="Shipping">
+    <bpmndi:BPMNPlane id="ship_plane" bpmnElement="ship">
+      <bpmndi:BPMNShape id="ship_start_di" bpmnElement="ship_start">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="135" y="145" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ship_pack_di" bpmnElement="ship_pack">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ship_send_di" bpmnElement="ship_send">
+        <dc:Bounds x="390" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ship_end_di" bpmnElement="ship_end">
+        <dc:Bounds x="542" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="541" y="145" width="39" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ship_f1_di" bpmnElement="ship_f1">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ship_f2_di" bpmnElement="ship_f2">
+        <di:waypoint x="340" y="120" />
+        <di:waypoint x="390" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ship_f3_di" bpmnElement="ship_f3">
+        <di:waypoint x="490" y="120" />
+        <di:waypoint x="542" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

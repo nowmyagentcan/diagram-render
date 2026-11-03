@@ -7,7 +7,7 @@ use std::io::{self, IsTerminal, Write};
 use std::time::Duration;
 
 use crate::detect::Format;
-use crate::engine::Probe;
+use crate::engine::{Page, Probe};
 use crate::error::{Error, Warning};
 
 const DIM: &str = "2";
@@ -172,7 +172,8 @@ pub struct Made<'a> {
     /// PNG pixels per CSS pixel; `None` for SVG.
     pub scale: Option<f64>,
     pub took: Duration,
-    pub page: Option<&'a str>,
+    pub page: Option<&'a Page>,
+    pub pages: &'a [Page],
 }
 
 /// `✓ flow.mmd → flow.svg  1180×640  18 KB  0.21 s`.

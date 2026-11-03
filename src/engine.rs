@@ -14,7 +14,7 @@ use crate::error::{Error, Warning};
 use crate::input::Lines;
 use crate::output::To;
 use crate::raster::{self, Png};
-use crate::{d2, dot, mermaid};
+use crate::{bpmn, d2, dot, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -213,10 +213,27 @@ pub struct Task<'a> {
     pub to: To,
 }
 
-/// An engine's SVG and what it warned about.
+/// A page of a diagram file: its number (from 1) when it has one, and its name.
+pub struct Page {
+    pub index: Option<usize>,
+    pub name: String,
+}
+
+impl Page {
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::json!({"index": self.index, "name": self.name})
+    }
+}
+
+/// An SVG and what was warned about while making it; for files with pages, the one drawn and
+/// every page; and the kind of diagram, when only drawing it tells.
+#[derive(Default)]
 pub struct Rendered {
     pub svg: Vec<u8>,
     pub warnings: Vec<Warning>,
+    pub page: Option<Page>,
+    pub pages: Vec<Page>,
+    pub diagram_type: Option<&'static str>,
 }
 
 /// What a check found.
@@ -224,6 +241,7 @@ pub struct Rendered {
 pub struct Checked {
     pub errors: Vec<Error>,
     pub warnings: Vec<Warning>,
+    pub diagram_type: Option<&'static str>,
 }
 
 impl Engine {
@@ -234,12 +252,13 @@ impl Engine {
     }
 }
 
-/// Renders `task` to SVG with the engine for `format`.
-pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
-    match format {
-        Format::Mermaid => mermaid::render(engine, task),
-        Format::Dot => dot::render(engine, task),
-        Format::D2 => d2::render(engine, task),
+/// Renders `task` to SVG with the engine for `format`, or with this binary's own renderer.
+pub fn render(format: Format, engine: Option<&mut Engine>, task: &Task) -> Result<Rendered, Error> {
+    match (format, engine) {
+        (Format::Mermaid, Some(engine)) => mermaid::render(engine, task),
+        (Format::Dot, Some(engine)) => dot::render(engine, task),
+        (Format::D2, Some(engine)) => d2::render(engine, task),
+        (Format::Bpmn, _) => bpmn::render(task),
         _ => Err(Error::internal("no renderer is built in yet")),
     }
 }
@@ -248,26 +267,29 @@ pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Render
 /// diagrams, else by resvg.
 pub fn png(
     format: Format,
-    engine: &mut Engine,
+    engine: Option<&mut Engine>,
     task: &Task,
     svg: &str,
     scale: f64,
     warnings: &mut Vec<Warning>,
 ) -> Result<Png, Error> {
-    match format {
-        Format::Mermaid => mermaid::png(engine, task, scale, warnings),
-        Format::D2 => d2::png(engine, task, svg, scale),
+    match (format, engine) {
+        (Format::Mermaid, Some(engine)) => mermaid::png(engine, task, scale, warnings),
+        (Format::D2, Some(engine)) => d2::png(engine, task, svg, scale),
         // Graphviz measures a family it has no widths for as Times.
-        _ => raster::png(svg, scale, raster::SERIF, warnings),
+        (Format::Dot, _) => raster::png(svg, scale, raster::SERIF, warnings),
+        _ => raster::png(svg, scale, raster::SANS, warnings),
     }
 }
 
-/// Checks `task` with the engine for `format`, without rendering it.
-pub fn check(format: Format, engine: &mut Engine, task: &Task) -> Result<Checked, Error> {
-    match format {
-        Format::Mermaid => mermaid::check(engine, task),
-        Format::Dot => dot::check(engine, task),
-        Format::D2 => d2::check(engine, task),
+/// Checks `task` with the engine for `format`, or with this binary's own renderer, without
+/// writing anything.
+pub fn check(format: Format, engine: Option<&mut Engine>, task: &Task) -> Result<Checked, Error> {
+    match (format, engine) {
+        (Format::Mermaid, Some(engine)) => mermaid::check(engine, task),
+        (Format::Dot, Some(engine)) => dot::check(engine, task),
+        (Format::D2, Some(engine)) => d2::check(engine, task),
+        (Format::Bpmn, _) => bpmn::check(task),
         _ => Err(Error::internal("no checker is built in yet")),
     }
 }

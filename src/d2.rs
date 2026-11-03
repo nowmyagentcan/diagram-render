@@ -13,8 +13,9 @@ use crate::raster::Png;
 
 pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     let said = run(engine, task, Some(task.name), None)?;
-    let Rendered { svg, mut warnings } =
-        said.map_err(|errors| errors.into_iter().next().unwrap())?;
+    let Rendered {
+        svg, mut warnings, ..
+    } = said.map_err(|errors| errors.into_iter().next().unwrap())?;
     if task.background.is_some() {
         warnings.push(Warning::background_ignored());
     }
@@ -22,7 +23,11 @@ pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     if remote > 0 && !task.allow_network && task.to == To::Svg {
         warnings.push(Warning::remote_images_not_fetched(remote));
     }
-    Ok(Rendered { svg, warnings })
+    Ok(Rendered {
+        svg,
+        warnings,
+        ..Rendered::default()
+    })
 }
 
 /// d2's own PNG at `scale` of the diagram `svg` (made by `render`), as 8-bit RGBA. A PNG
@@ -59,12 +64,12 @@ fn remote_images(svg: &str) -> usize {
 pub fn check(engine: &mut Engine, task: &Task) -> Result<Checked, Error> {
     Ok(match run(engine, task, None, None)? {
         Ok(Rendered { warnings, .. }) => Checked {
-            errors: vec![],
             warnings,
+            ..Checked::default()
         },
         Err(errors) => Checked {
             errors,
-            warnings: vec![],
+            ..Checked::default()
         },
     })
 }
@@ -118,6 +123,7 @@ fn run(
         Some(0) => Ok(Ok(Rendered {
             svg: ran.stdout,
             warnings,
+            ..Rendered::default()
         })),
         Some(1) if !errors.is_empty() => Ok(Err(errors)),
         _ => Err(engine.failed(&ran)),

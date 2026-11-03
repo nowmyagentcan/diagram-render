@@ -1,5 +1,6 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
+mod bpmn;
 mod d2;
 mod detect;
 mod dot;
@@ -447,13 +448,9 @@ fn run(command: Command, args: Args) -> u8 {
         diagram_type: diagram.diagram_type,
         warnings: [diagram.warnings, warnings].concat(),
     };
-    let mut engine = match engine::locate(diagram.format) {
-        Some(Ok(engine)) => engine,
-        Some(Err(missing)) => return failed(command, &name, &known, &missing, args.json),
-        None => {
-            let e = Error::internal("no renderer is built in yet");
-            return failed(command, &name, &known, &e, args.json);
-        }
+    let mut engine = match engine::locate(diagram.format).transpose() {
+        Ok(engine) => engine,
+        Err(missing) => return failed(command, &name, &known, &missing, args.json),
     };
     let text = diagram.text.as_deref().unwrap_or_default();
     // The engine's folder for relative imports and images: the input's, else the current one.
@@ -475,9 +472,21 @@ fn run(command: Command, args: Args) -> u8 {
         to: target.as_ref().map_or(To::Svg, |t| t.1),
     };
     let format = diagram.format;
+    let mut kind = None;
     let done = match target {
-        None => engine::check(format, &mut engine, &task).map(|c| (None, c.errors, c.warnings)),
-        Some(target) => engine::render(format, &mut engine, &task).and_then(|r| {
+        None => engine::check(format, engine.as_mut(), &task).map(|c| {
+            kind = c.diagram_type;
+            (None, c.errors, c.warnings)
+        }),
+        Some(target) => engine::render(format, engine.as_mut(), &task).and_then(|r| {
+            kind = r.diagram_type;
+            // Beside the input, the output is named after the page found, not as --page wrote it.
+            let target = match (&r.page, &args.page, &args.output, path) {
+                (Some(page), Some(_), None, Some(_)) => {
+                    output::target(arg, None, Some(target.1), Some(&page.name))?
+                }
+                _ => target,
+            };
             let (svg, removed) = svg::clean(&String::from_utf8_lossy(&r.svg))
                 .map_err(|e| Error::internal(&format!("the engine's SVG isn't valid XML: {e}")))?;
             let mut warnings = r.warnings;
@@ -496,17 +505,18 @@ fn run(command: Command, args: Args) -> u8 {
                     let scale = args.scale.unwrap_or(2.0);
                     let (scale, reduced) = raster::fit(width + pad, height + pad, scale)?;
                     warnings.extend(reduced);
-                    let png = engine::png(format, &mut engine, &task, &svg, scale, &mut warnings)?;
+                    let png =
+                        engine::png(format, engine.as_mut(), &task, &svg, scale, &mut warnings)?;
                     (png.bytes, png.width, png.height, Some(scale))
                 }
             };
-            Ok((Some((target, image)), vec![], warnings))
+            Ok((Some((target, image, r.page, r.pages)), vec![], warnings))
         }),
     };
     if args.debug {
         let mut err = io::stderr().lock();
-        let written =
-            (engine.log.iter()).try_for_each(|l| writeln!(err, "debug: {}", text::escape(l)));
+        let mut log = engine.iter().flat_map(|e| &e.log);
+        let written = log.try_for_each(|l| writeln!(err, "debug: {}", text::escape(l)));
         if let Err(e) = written.and_then(|()| err.flush()) {
             return finish(Err(e), 3);
         }
@@ -516,9 +526,13 @@ fn run(command: Command, args: Args) -> u8 {
         Err(e) => return failed(command, &name, &known, &e, args.json),
     };
     known.warnings.extend(warnings);
+    known.diagram_type = kind.or(known.diagram_type);
     match made {
         None => checks(&name, &known, &errors, args.json),
-        Some(((target, to), (bytes, width, height, scale))) => {
+        Some(((target, to), (bytes, width, height, scale), page, pages)) => {
+            // d2 can't list its boards, so a board has a name but no number.
+            let page =
+                page.or_else(|| (args.page.clone()).map(|name| engine::Page { index: None, name }));
             if let Err(e) = output::write(&target, &bytes) {
                 return failed(command, &name, &known, &e, args.json);
             }
@@ -534,7 +548,8 @@ fn run(command: Command, args: Args) -> u8 {
                 bytes: bytes.len(),
                 scale,
                 took: start.elapsed(),
-                page: args.page.as_deref(),
+                page: page.as_ref(),
+                pages: &pages,
             };
             renders(&known, to, &made, target == Target::Stdout, args.json)
         }
@@ -549,11 +564,11 @@ fn renders(known: &Known, to: To, made: &Made, image_on_stdout: bool, json: bool
         let result = json!({
             "input": made.input, "format": format.id(), "diagram_type": known.diagram_type,
             "output": made.output, "to": to.ext(), "width": made.width, "height": made.height,
-            // d2 can't list its boards, so a board has a name but no number.
             // A whole scale reads as one: 2, not 2.0.
             "bytes": made.bytes,
             "scale": made.scale.map(|s| if s.fract() == 0.0 { json!(s as u64) } else { json!(s) }),
-            "page": made.page.map(|name| json!({"index": null, "name": name})), "pages": [],
+            "page": made.page.map(engine::Page::json),
+            "pages": made.pages.iter().map(engine::Page::json).collect::<Vec<_>>(),
             "warnings": known.warnings.iter().map(Warning::json).collect::<Vec<_>>(),
             "engine": {"name": name, "version": version},
             "elapsed_ms": made.took.as_millis() as u64,
