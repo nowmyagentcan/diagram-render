@@ -62,16 +62,13 @@ cross=${host:+--host=$host}
 (cd "$work/expat" && ./configure -q $cross --prefix="$work/deps" --disable-shared --enable-static \
   --without-docbook --without-examples --without-tests && make -s -j"$jobs" && make -s install) >/dev/null
 cd "$work/graphviz"
-# Every optional library is off, so the same text-width tables lay out text on every OS; zlib is off
-# by its configure cache variable, since configure has no switch for it.
+# Every optional library is off, so the same text-width tables lay out text on every OS (zlib by its
+# configure cache variable: there is no switch). Only lib/, plugin/ and dot are built, never bindings.
 ./configure -q $cross --enable-static --disable-shared --disable-ltdl --without-x --with-expat \
-  --with-expatincludedir="$work/deps/include" --with-expatlibdir="$work/deps/lib" \
   --without-gts --without-gdk --without-gdk-pixbuf --without-gtk --without-pangocairo --without-freetype2 \
   --without-fontconfig --without-gd --without-webp --without-rsvg --without-poppler --without-ghostscript \
   --without-lasi --without-glut --without-qt --without-devil --without-ann --without-quartz --without-gdiplus \
-  --disable-swig --disable-sharp --disable-go --disable-guile --disable-io --disable-java --disable-javascript \
-  --disable-lua --disable-ocaml --disable-perl --disable-php --disable-python --disable-python3 --disable-r \
-  --disable-ruby --disable-tcl --disable-man-pdfs ac_cv_header_zlib_h=no \
+  ac_cv_header_zlib_h=no \
   CPPFLAGS="-I$work/deps/include" LDFLAGS="-L$work/deps/lib" CFLAGS="-O2 -w" CXXFLAGS="-O2 -w" >/dev/null
 for d in lib plugin; do make -s -j"$jobs" -C $d >/dev/null; done
 make -s -C cmd/dot "dot_static$exe" LDFLAGS="-L$work/deps/lib $static" >/dev/null
