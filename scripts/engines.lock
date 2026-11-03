@@ -15,3 +15,10 @@ d2 0.9.0 linux-arm64 ac2c028697199479acb321db1e3d68caee9f2ba492ed73caa3cd13f3829
 graphviz 16.1.0 all 0f661718f3e5268dc3bad0fb53ab646605d26db70f4080799aff1dc2f61783c3 https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.xz
 expat 2.10.0 all c624ba2998fc65df1163a49641ff3f9ab73138b11641d92c86bee0fb01b1bc7f https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.xz
 liberation 2.1.5 all 7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0 https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz
+excalidraw 0.18.1 all b280d4b364b65cba264c5aa4e7435cc2ce6421eabbbef9765a56997a0fadf534 https://registry.npmjs.org/@excalidraw/excalidraw/-/excalidraw-0.18.1.tgz
+license-virgil 3d4c829 all a3ac9cdc65ef304ffb095d8cc877ee93bf1bffa88269693cd42ddf001650ffd0 https://raw.githubusercontent.com/excalidraw/virgil/3d4c829dc85b455d4646631ac52bc1517df04217/LICENSE.md
+license-cascadia 56bcca3 all 51882cd3cdba4e16f220f44ddb08a635c38c44ea6e0975db2574f4be6f958238 https://raw.githubusercontent.com/microsoft/cascadia-code/56bcca3f2c1e4cb19458954f0e2bb4635960df91/LICENSE
+license-nunito 2fe1e8c all 580df76c95a1ec5ab878ceb25bb3d85c6a076804e9c970c8c6972aea775fdf65 https://raw.githubusercontent.com/google/fonts/2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc/ofl/nunito/OFL.txt
+license-lilita 2fe1e8c all 255d5debbb80eb2ea762644311f266a279e8778f00156655a516e2b7781a63e1 https://raw.githubusercontent.com/google/fonts/2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc/ofl/lilitaone/OFL.txt
+license-excalifont a2ec288 all db994e57791014204ba89e7ff902f2409b46ace3cd53907c3b4ac0e88d8e18c9 https://raw.githubusercontent.com/excalidraw/excalidraw/a2ec2889babf7d2295469c6d90ebe77fae57df84/packages/excalidraw/fonts/Excalifont/index.ts
+license-comicshanns a2ec288 all 43742ce64655de872db8eeaaab9c12a665fb0b333114ae59283714848b988bec https://raw.githubusercontent.com/excalidraw/excalidraw/a2ec2889babf7d2295469c6d90ebe77fae57df84/packages/excalidraw/fonts/ComicShanns/index.ts

@@ -32,17 +32,32 @@ fetch() {
   mkdir -p "$6"
   case $f in
     *.zip) unzip -q "$f" -d "$6" ;;
+    *.md | *.txt | *.ts | */LICENSE) cp "$f" "$6/" ;;
     *) tar -xf "$f" -C "$6" --strip-components=1 ;;
   esac
 }
 
-mkdir -p "$dest/engines" "$dest/fonts" "$dest/licenses/merman" "$dest/licenses/d2" "$dest/licenses/graphviz"   "$dest/licenses/fonts"
+mkdir -p "$dest/engines" "$dest/fonts/excalidraw" "$dest/licenses/merman" "$dest/licenses/d2" "$dest/licenses/graphviz"   "$dest/licenses/fonts"
 
 fetch liberation "$work/liberation"
 for f in Sans-Regular Sans-Bold Sans-Italic Sans-BoldItalic Serif-Regular Serif-Bold Mono-Regular Mono-Bold; do
   cp "$work/liberation/Liberation$f.ttf" "$dest/fonts/"
 done
 cp "$work/liberation/LICENSE" "$dest/licenses/fonts/Liberation-LICENSE.txt"
+
+# Excalidraw's fonts, unmodified. Its package holds no licence files: four come from the fonts' own
+# repositories, and Excalifont's and Comic Shanns' from the name-table comment in Excalidraw's source.
+fetch excalidraw "$work/excalidraw"
+for f in Excalifont/Excalifont Virgil/Virgil Cascadia/CascadiaCode Nunito/Nunito Lilita/Lilita ComicShanns/ComicShanns; do
+  cp "$work/excalidraw/dist/prod/fonts/$f"-*.woff2 "$dest/fonts/excalidraw/"
+done
+for name in virgil cascadia nunito lilita excalifont comicshanns; do fetch license-$name "$work/license-$name"; done
+cp "$work/license-virgil/LICENSE.md" "$dest/licenses/fonts/Virgil-LICENSE.txt"
+cp "$work/license-cascadia/LICENSE" "$dest/licenses/fonts/CascadiaCode-LICENSE.txt"
+cp "$work/license-nunito/OFL.txt" "$dest/licenses/fonts/Nunito-LICENSE.txt"
+cp "$work/license-lilita/OFL.txt" "$dest/licenses/fonts/LilitaOne-LICENSE.txt"
+sed -n '/^\/\* Generated/,/\*\//p' "$work/license-excalifont/index.ts" > "$dest/licenses/fonts/Excalifont-LICENSE.txt"
+sed -n '/^\/\* Generated/,/\*\//p' "$work/license-comicshanns/index.ts" > "$dest/licenses/fonts/ComicShanns-LICENSE.txt"
 
 case $target in
   linux-*)
