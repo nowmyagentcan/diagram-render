@@ -1,0 +1,13 @@
+[package]
+name = "diagram-render"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Render Mermaid, Graphviz DOT, D2, BPMN, draw.io and Excalidraw diagrams to SVG or PNG, offline"
+repository = "https://github.com/nowmyagentcan/diagram-render"
+publish = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
