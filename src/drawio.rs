@@ -558,7 +558,12 @@ impl Drawing {
 
     fn label(&mut self, text: &str, style: &Style, at: Rect, edge: bool) {
         let mut out = String::new();
-        let drawn = label::draw(&mut out, &self.widths, text, style, at, edge);
+        let mut dropped = label::Dropped::default();
+        let drawn = label::draw(&mut out, &self.widths, text, style, at, edge, &mut dropped);
+        self.removed += dropped.unsafe_items;
+        if dropped.simplified && !self.warnings.contains(&Warning::html_simplified()) {
+            self.warnings.push(Warning::html_simplified());
+        }
         if let Some(b) = drawn {
             self.include_rect(b);
         }

@@ -128,23 +128,31 @@ pub fn uncovered(text: &str) -> Result<Vec<char>, Error> {
     Ok(missing)
 }
 
-/// Text widths from Liberation Sans, which has Arial's.
-pub struct Widths(Vec<u8>);
+/// Text widths from Liberation Sans regular and bold, which have Arial's.
+pub struct Widths([Vec<u8>; 2]);
 
 impl Widths {
     pub fn load() -> Result<Self, Error> {
-        let file = &fonts()?[0];
-        let unreadable = |e: &dyn std::fmt::Display| {
-            Error::internal(&format!("can't read the font {}: {e}", file.display()))
+        let files = fonts()?;
+        let read = |file: &PathBuf| -> Result<Vec<u8>, Error> {
+            let unreadable = |e: &dyn std::fmt::Display| {
+                Error::internal(&format!("can't read the font {}: {e}", file.display()))
+            };
+            let data = fs::read(file).map_err(|e| unreadable(&e))?;
+            FontRef::new(&data).map_err(|e| unreadable(&e))?;
+            Ok(data)
         };
-        let data = fs::read(file).map_err(|e| unreadable(&e))?;
-        FontRef::new(&data).map_err(|e| unreadable(&e))?;
-        Ok(Self(data))
+        Ok(Self([read(&files[0])?, read(&files[1])?]))
     }
 
     /// The advance width of `text` at `size` px; a character the font lacks counts as 1 em.
     pub fn of(&self, text: &str, size: f64) -> f64 {
-        let font = FontRef::new(&self.0).expect("checked when loaded");
+        self.styled(text, size, false)
+    }
+
+    /// The same in bold when `bold`.
+    pub fn styled(&self, text: &str, size: f64, bold: bool) -> f64 {
+        let font = FontRef::new(&self.0[usize::from(bold)]).expect("checked when loaded");
         let (charmap, metrics) = (
             font.charmap(),
             font.glyph_metrics(Size::new(size as f32), LocationRef::default()),

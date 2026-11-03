@@ -529,3 +529,77 @@ fn unknown_edge_styles_and_arrows_are_drawn_as_the_nearest_known() {
         ])
     );
 }
+
+#[test]
+fn labels_are_laid_out_where_draw_io_puts_them() {
+    let svg = svg_of("labels.drawio", &[]);
+    for want in [
+        // Wrapped to the box less its spacing, each line centred.
+        r#"<tspan x="36.97" y="182.56">A long label that</tspan><tspan x="38.98" y="196.96">wraps inside its</tspan>"#,
+        // Aligned to a corner, 2 px in (and 5 more from the top), or outside the cell.
+        r#"<tspan x="342" y="178.36">Top left</tspan>"#,
+        r#"<tspan x="553.31" y="213.96">Bottom right</tspan>"#,
+        r#"<tspan x="33.66" y="338.36">Below</tspan>"#,
+        r#"<tspan x="202" y="304.16">Right of it</tspan>"#,
+        // List markers before text 1.75 em in, and paragraphs 1 em apart.
+        r#"<tspan x="552.13" y="50.36">•  </tspan><tspan x="563" y="50.36">Apples</tspan>"#,
+        r#"<tspan x="366.98" y="85.16">A paragraph</tspan>"#,
+        // Inline looks, a font tag and a coloured span.
+        r#"<tspan font-weight="bold">Bold</tspan>"#,
+        r#"<tspan font-size="9.96" baseline-shift="sub">2</tspan>"#,
+        r#"<tspan text-decoration="line-through">struck</tspan>"#,
+        r##"<tspan font-family="'Courier New', Helvetica, Arial, 'Liberation Sans', sans-serif" font-size="18" fill="#0000ff">Font tag</tspan>"##,
+        r#"fill="rgb(255, 0, 0)">Red 16 px</tspan>"#,
+        // Edge labels on a white box, one along the route, and a lane's name read upwards.
+        r#"<tspan x="198.69" y="403.81">says</tspan>"#,
+        r#"<tspan x="127.59" y="492.81">near the start</tspan>"#,
+        r#"transform="rotate(-90 "#,
+    ] {
+        assert!(svg.contains(want), "{want}: {svg}");
+    }
+}
+
+#[test]
+fn html_outside_the_subset_is_text_and_scripts_are_left_out() {
+    let label = "&lt;img src=x onerror=alert(1)&gt;Safe &lt;table&gt;&lt;tr&gt;&lt;td&gt;cell&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;";
+    let cells = format!(
+        r#"
+        <mxCell id="a" value="{label}" style="html=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="120" height="60" as="geometry" />
+        </mxCell>"#
+    );
+    let dir = folder("drawio-unsafe");
+    let (code, v) = in_dir(&dir, "x.drawio", page(&cells).as_bytes(), &[]);
+    assert_eq!(code, 0);
+    assert_eq!(codes(&v), ["html_simplified", "unsafe_content_removed"]);
+    assert_eq!(
+        v["warnings"][1]["message"],
+        "Removed 1 unsafe item (scripts, event handlers or javascript: links) from the SVG."
+    );
+    let svg = fs::read_to_string(dir.join("x.svg")).unwrap();
+    assert!(svg.contains(">Safe cell</tspan>"), "{svg}");
+    assert!(!svg.contains("onerror") && !svg.contains("img"), "{svg}");
+}
+
+#[test]
+fn pngs_say_which_fonts_were_missing_or_came_from_the_computer() {
+    let cells = format!(
+        r#"{}{}"#,
+        vertex("a", "Missing font", 0, 0, ""),
+        vertex("b", "漢字 label", 200, 0, ""),
+    )
+    .replace(
+        r#"style="whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="0""#,
+        r#"style="whiteSpace=wrap;html=1;fontFamily=No Such Font;" vertex="1" parent="1">
+          <mxGeometry x="0""#,
+    );
+    let dir = folder("drawio-fonts");
+    let (code, v) = in_dir(&dir, "f.drawio", page(&cells).as_bytes(), &["--to", "png"]);
+    assert_eq!(code, 0);
+    assert_eq!(codes(&v), ["font_substituted", "font_fallback"]);
+    assert_eq!(
+        v["warnings"][0]["message"],
+        "Font No Such Font isn't available; drew its text with Liberation Sans."
+    );
+}

@@ -192,6 +192,14 @@ impl Warning {
         }
     }
 
+    pub fn html_simplified() -> Self {
+        Self {
+            code: "html_simplified",
+            message: "Some HTML in labels was reduced to plain text.".into(),
+            line: None,
+        }
+    }
+
     pub fn remote_image_not_fetched(url: &str) -> Self {
         let cut: String = url.chars().take(80).collect();
         let cut = if cut.len() < url.len() {
