@@ -1,0 +1,7 @@
+sequenceDiagram
+  participant Agent
+  participant Tool
+  Agent->>Tool: check flow.mmd
+  Tool-->>Agent: line 3, column 9
+  Agent->>Tool: render flow.mmd
+  Tool-->>Agent: flow.svg

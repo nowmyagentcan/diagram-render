@@ -263,7 +263,7 @@ fn by_content(text: &str, shown: &str) -> Result<Option<Format>, Error> {
 
 /// The root element's name and attributes (values as written), after any XML declaration,
 /// comments, processing instructions and doctype.
-fn xml_root(mut s: &str) -> Option<(&str, Vec<(&str, &str)>)> {
+pub fn xml_root(mut s: &str) -> Option<(&str, Vec<(&str, &str)>)> {
     loop {
         s = s.trim_start();
         if let Some(r) = s.strip_prefix("<?") {

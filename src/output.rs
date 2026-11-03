@@ -1,7 +1,9 @@
 //! Where a render goes: `-o FILE`, `-o -` for stdout, stdout for stdin, or beside the input
 //! with the diagram's extension replaced.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
+use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::detect;
@@ -22,7 +24,7 @@ impl To {
         }
     }
 
-    fn ext(self) -> &'static str {
+    pub fn ext(self) -> &'static str {
         match self {
             Self::Svg => "svg",
             Self::Png => "png",
@@ -65,6 +67,33 @@ pub fn target(
         Some(to) if to != by_ext => Err(Error::format_conflict(by_ext.ext(), to.ext())),
         _ => Ok((Target::File(file), by_ext)),
     }
+}
+
+/// Writes `bytes` to `target`. A file is written beside itself under a temporary name, then
+/// renamed over the old one, so a failed or stopped run leaves the old file whole. A reader
+/// of stdout that hung up isn't an error.
+pub fn write(target: &Target, bytes: &[u8]) -> Result<(), Error> {
+    let path = match target {
+        Target::Stdout => {
+            let mut out = io::stdout().lock();
+            return match out.write_all(bytes).and_then(|()| out.flush()) {
+                Err(e) if e.kind() != io::ErrorKind::BrokenPipe => {
+                    Err(Error::write_failed("stdout", &e))
+                }
+                _ => Ok(()),
+            };
+        }
+        Target::File(path) => path,
+    };
+    let mut temp = OsString::from(".");
+    temp.push(path.file_name().unwrap_or_default());
+    temp.push(format!(".{}.tmp", std::process::id()));
+    let temp = path.with_file_name(temp);
+    let written = fs::write(&temp, bytes).and_then(|()| fs::rename(&temp, path));
+    written.map_err(|e| {
+        let _ = fs::remove_file(&temp);
+        Error::write_failed(&path.display().to_string(), &e)
+    })
 }
 
 /// Whether `output` is the file `input` names.

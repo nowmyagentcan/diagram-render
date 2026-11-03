@@ -126,8 +126,13 @@ impl<'a> Lines<'a> {
         self.text[start..end].trim_end_matches(['\r', '\n'])
     }
 
-    /// The line and character column (both from 1) of byte `offset`.
+    /// The line and character column (both from 1) of byte `offset`, an engine's: one past the
+    /// end or inside a character counts as the place before it.
     pub fn locate(&self, offset: usize) -> (usize, usize) {
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
         let line = self.starts.partition_point(|&s| s <= offset);
         let start = self.starts[line - 1];
         (line, self.text[start..offset].chars().count() + 1)
@@ -150,6 +155,7 @@ fn excerpt(line: &str, column: Option<usize>) -> Excerpt {
         return Excerpt {
             text: line.into(),
             caret: column,
+            end: None,
         };
     }
     let at = column.unwrap_or(1).min(n);
@@ -164,6 +170,7 @@ fn excerpt(line: &str, column: Option<usize>) -> Excerpt {
     Excerpt {
         text: chars.into_iter().collect(),
         caret: column.map(|c| c - start),
+        end: None,
     }
 }
 

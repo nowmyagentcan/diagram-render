@@ -4,6 +4,7 @@
 
 use std::env;
 use std::io::{self, IsTerminal, Write};
+use std::time::Duration;
 
 use crate::detect::Format;
 use crate::engine::Probe;
@@ -159,6 +160,72 @@ pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -
     let line = warning.line.map(|l| format!(":{l}")).unwrap_or_default();
     let message = escape(&warning.message);
     writeln!(w, "{mark} {}{line}: {message}", escape(input))
+}
+
+/// What a render made.
+pub struct Made<'a> {
+    pub input: &'a str,
+    pub output: &'a str,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: usize,
+    pub took: Duration,
+}
+
+/// `✓ flow.mmd → flow.svg  1180×640  18 KB  0.21 s`.
+pub fn rendered(w: &mut impl Write, look: Look, m: &Made) -> io::Result<()> {
+    let mark = look.paint(GREEN, look.pick("✓", "ok"));
+    let arrow = look.pick("→", "->");
+    let output = look.paint(BOLD, &escape(m.output));
+    let times = look.pick("×", "x");
+    let (input, w_, h) = (escape(m.input), m.width, m.height);
+    let (size, secs) = (size(m.bytes), seconds(m.took));
+    writeln!(
+        w,
+        "{mark} {input} {arrow} {output}  {w_}{times}{h}  {size}  {secs} s"
+    )
+}
+
+/// `✓ flow.mmd is valid Mermaid (flowchart)`.
+pub fn valid(
+    w: &mut impl Write,
+    look: Look,
+    input: &str,
+    name: &str,
+    kind: Option<&str>,
+) -> io::Result<()> {
+    let mark = look.paint(GREEN, look.pick("✓", "ok"));
+    let kind = kind.map(|k| format!(" ({k})")).unwrap_or_default();
+    writeln!(w, "{mark} {} is valid {name}{kind}", escape(input))
+}
+
+/// `2 errors · 1 warning`.
+pub fn counts(w: &mut impl Write, look: Look, errors: usize, warnings: usize) -> io::Result<()> {
+    let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    let line = format!(
+        "{} {} {}",
+        plural(errors, "error"),
+        look.pick("·", "-"),
+        plural(warnings, "warning")
+    );
+    writeln!(w, "{}", look.paint(DIM, &line))
+}
+
+/// `812 B`, `18 KB` (whole KB under 1 MiB), `2.4 MB`.
+pub fn size(bytes: usize) -> String {
+    match bytes {
+        b if b < 1024 => format!("{b} B"),
+        b if b < 1 << 20 => format!("{} KB", (b as f64 / 1024.0).round()),
+        b => format!("{:.1} MB", b as f64 / (1 << 20) as f64),
+    }
+}
+
+/// `0.21` under 10 s, `12.3` from 10 s.
+pub fn seconds(took: Duration) -> String {
+    match took.as_secs_f64() {
+        s if s < 10.0 => format!("{s:.2}"),
+        s => format!("{s:.1}"),
+    }
 }
 
 /// One line per format: its name, engine, extensions, and `ok` or why its engine doesn't run.

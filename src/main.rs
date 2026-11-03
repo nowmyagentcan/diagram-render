@@ -4,7 +4,9 @@ mod detect;
 mod engine;
 mod error;
 mod input;
+mod mermaid;
 mod output;
+mod svg;
 mod text;
 
 use std::ffi::OsString;
@@ -12,13 +14,15 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use detect::Format;
+use engine::{Job, Task};
 use error::{Error, Warning};
 use lexopt::Arg::{Long, Short, Value};
 use output::{Target, To};
 use serde_json::json;
-use text::Look;
+use text::{Look, Made};
 
 const HELP: &str = "\
 Render Mermaid, DOT, D2, BPMN, draw.io and Excalidraw diagrams.
@@ -132,7 +136,9 @@ struct Args {
     to: Option<To>,
     scale: Option<f64>,
     format: Option<Format>,
+    background: Option<String>,
     page: Option<String>,
+    timeout: Option<u64>,
     json: bool,
     debug: bool,
 }
@@ -219,9 +225,9 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             ("--to", _) => args.to = Some(to(&string(&mut p, name)?)?),
             ("--format", _) => args.format = format(&string(&mut p, name)?)?,
             ("--scale", _) => args.scale = Some(scale(&string(&mut p, name)?)?),
-            ("--background", _) => background(&string(&mut p, name)?)?,
+            ("--background", _) => args.background = background(&string(&mut p, name)?)?,
             ("--page", _) => args.page = Some(page(string(&mut p, name)?)?),
-            ("--timeout", _) => drop(timeout(&string(&mut p, name)?)?),
+            ("--timeout", _) => args.timeout = Some(timeout(&string(&mut p, name)?)?),
             (_, Value(_)) if command == Command::Formats => {
                 return Err(Error::invalid_option(
                     "formats takes no file.",
@@ -345,13 +351,21 @@ fn scale(v: &str) -> Result<f64, Error> {
     }
 }
 
-fn background(v: &str) -> Result<(), Error> {
+/// `--background`: `None` for auto, else `white`, `transparent` or `#rrggbb`.
+fn background(v: &str) -> Result<Option<String>, Error> {
+    let v = v.to_ascii_lowercase();
     let hex = v
         .strip_prefix('#')
-        .is_some_and(|h| matches!(h.len(), 3 | 6) && h.bytes().all(|b| b.is_ascii_hexdigit()));
-    match hex || ["auto", "transparent", "white"].contains(&v.to_ascii_lowercase().as_str()) {
-        true => Ok(()),
-        false => Err(Error::invalid_option(
+        .filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()));
+    match (v.as_str(), hex.map(str::len)) {
+        ("auto", _) => Ok(None),
+        ("transparent" | "white", _) | (_, Some(6)) => Ok(Some(v)),
+        (_, Some(3)) => Ok(Some(
+            hex.unwrap()
+                .chars()
+                .fold("#".into(), |s, c| format!("{s}{c}{c}")),
+        )),
+        _ => Err(Error::invalid_option(
             "--background must be auto, transparent, white, #RGB or #RRGGBB.",
             try_hint("--background"),
         )),
@@ -380,11 +394,12 @@ fn timeout(v: &str) -> Result<u64, Error> {
 }
 
 fn run(command: Command, args: Args) -> u8 {
-    let Some(arg) = args.input else {
+    let start = Instant::now();
+    let Some(arg) = &args.input else {
         return usage(&Error::no_input(), args.json);
     };
     let name = arg.to_string_lossy().into_owned();
-    let path = (arg != "-").then(|| Path::new(&arg));
+    let path = (arg != "-").then(|| Path::new(arg));
     let shown = if path.is_some() {
         name.as_str()
     } else {
@@ -393,7 +408,7 @@ fn run(command: Command, args: Args) -> u8 {
     let mut warnings = vec![];
     let mut target = None;
     if command == Command::Render {
-        let (output, to) = match output::target(&arg, args.output.as_deref(), args.to) {
+        let (output, to) = match output::target(arg, args.output.as_deref(), args.to) {
             Ok(target) => target,
             Err(e) => return usage(&e, args.json),
         };
@@ -403,13 +418,13 @@ fn run(command: Command, args: Args) -> u8 {
         if args.scale.is_some() && to == To::Svg {
             warnings.push(Warning::scale_ignored());
         }
-        target = Some(output);
+        target = Some((output, to));
     }
     let mut known = Known {
         format: args.format,
         ..Known::default()
     };
-    let read = input::read(&arg);
+    let read = input::read(arg);
     let diagram = match read.and_then(|bytes| detect::detect(path, shown, &bytes, args.format)) {
         Ok(diagram) => diagram,
         Err(e) => return failed(command, &name, &known, &e, args.json),
@@ -418,7 +433,7 @@ fn run(command: Command, args: Args) -> u8 {
         return usage(&Error::page_not_supported(diagram.format.name()), args.json);
     }
     // With --page the name holds the page's, so it can't be the input's.
-    if let (Some(Target::File(out)), Some(path), None) = (&target, path, &args.page)
+    if let (Some((Target::File(out), _)), Some(path), None) = (&target, path, &args.page)
         && output::is_input(out, path)
     {
         return usage(&Error::output_is_input(&out.to_string_lossy()), args.json);
@@ -428,11 +443,146 @@ fn run(command: Command, args: Args) -> u8 {
         diagram_type: diagram.diagram_type,
         warnings: [diagram.warnings, warnings].concat(),
     };
-    let e = match engine::locate(diagram.format) {
-        Some(Err(missing)) => missing,
-        _ => Error::internal("no renderer is built in yet"),
+    let mut engine = match engine::locate(diagram.format) {
+        Some(Ok(engine)) => engine,
+        Some(Err(missing)) => return failed(command, &name, &known, &missing, args.json),
+        None => {
+            let e = Error::internal("no renderer is built in yet");
+            return failed(command, &name, &known, &e, args.json);
+        }
     };
-    failed(command, &name, &known, &e, args.json)
+    if let Some((_, To::Png)) = target {
+        let e = Error::internal("PNG output isn't built in yet");
+        return failed(command, &name, &known, &e, args.json);
+    }
+    let text = diagram.text.as_deref().unwrap_or_default();
+    // The engine's folder for relative imports and images: the input's, else the current one.
+    let dir = path
+        .and_then(Path::parent)
+        .filter(|d| !d.as_os_str().is_empty());
+    let task = Task {
+        name: &name,
+        lines: input::Lines::new(text),
+        job: Job {
+            stdin: text.as_bytes(),
+            dir: dir.unwrap_or(Path::new(".")),
+            env: vec![],
+            limit: Duration::from_secs(args.timeout.unwrap_or(60)),
+        },
+        background: args.background.as_deref(),
+    };
+    let format = diagram.format;
+    let done = match target {
+        None => engine::check(format, &mut engine, &task).map(|checked| (None, checked)),
+        Some(target) => engine::render(format, &mut engine, &task).map(|r| {
+            let checked = engine::Checked {
+                errors: vec![],
+                warnings: r.warnings,
+            };
+            (Some((target, r.svg)), checked)
+        }),
+    };
+    if args.debug {
+        let mut err = io::stderr().lock();
+        let written =
+            (engine.log.iter()).try_for_each(|l| writeln!(err, "debug: {}", text::escape(l)));
+        if let Err(e) = written.and_then(|()| err.flush()) {
+            return finish(Err(e), 3);
+        }
+    }
+    let (made, checked) = match done {
+        Ok(done) => done,
+        Err(e) => return failed(command, &name, &known, &e, args.json),
+    };
+    known.warnings.extend(checked.warnings);
+    match made {
+        None => checks(&name, &known, &checked.errors, args.json),
+        Some(((target, to), svg)) => {
+            if let Err(e) = output::write(&target, &svg) {
+                return failed(command, &name, &known, &e, args.json);
+            }
+            let (width, height) = svg::size(&String::from_utf8_lossy(&svg));
+            let output = match &target {
+                Target::Stdout => "-".to_string(),
+                Target::File(p) => p.to_string_lossy().into_owned(),
+            };
+            let made = Made {
+                input: &name,
+                output: &output,
+                width,
+                height,
+                bytes: svg.len(),
+                took: start.elapsed(),
+            };
+            renders(&known, to, &made, target == Target::Stdout, args.json)
+        }
+    }
+}
+
+/// Reports a render that wrote its image: the result line and the warnings, or one JSON object.
+fn renders(known: &Known, to: To, made: &Made, image_on_stdout: bool, json: bool) -> u8 {
+    let written = if json {
+        let format = known.format.expect("a rendered input has a format");
+        let (name, version) = format.engine();
+        let result = json!({
+            "input": made.input, "format": format.id(), "diagram_type": known.diagram_type,
+            "output": made.output, "to": to.ext(), "width": made.width, "height": made.height,
+            "bytes": made.bytes, "scale": null, "page": null, "pages": [],
+            "warnings": known.warnings.iter().map(Warning::json).collect::<Vec<_>>(),
+            "engine": {"name": name, "version": version},
+            "elapsed_ms": made.took.as_millis() as u64,
+        });
+        writeln!(io::stdout(), "{result}")
+    } else {
+        let line = match image_on_stdout {
+            true => text::rendered(&mut io::stderr(), Look::stderr(), made),
+            false => text::rendered(&mut io::stdout(), Look::stdout(), made),
+        };
+        let (mut err, look) = (io::stderr().lock(), Look::stderr());
+        line.and_then(|()| {
+            (known.warnings.iter()).try_for_each(|w| text::warning(&mut err, look, made.input, w))
+        })
+    };
+    finish(written, 0)
+}
+
+/// Reports a check: valid, or every error, then the warnings and the counts; or one JSON object.
+fn checks(input: &str, known: &Known, errors: &[Error], json: bool) -> u8 {
+    let format = known.format.expect("a checked input has a format");
+    let written = if json {
+        let (name, version) = format.engine();
+        let result = json!({
+            "input": input, "format": format.id(), "diagram_type": known.diagram_type,
+            "valid": errors.is_empty(),
+            "errors": errors.iter().map(Error::check_json).collect::<Vec<_>>(),
+            "warnings": known.warnings.iter().map(Warning::json).collect::<Vec<_>>(),
+            "engine": {"name": name, "version": version},
+        });
+        writeln!(io::stdout(), "{result}")
+    } else {
+        let (mut err, look) = (io::stderr().lock(), Look::stderr());
+        let first = match errors.is_empty() {
+            true => text::valid(
+                &mut io::stdout(),
+                Look::stdout(),
+                input,
+                format.name(),
+                known.diagram_type,
+            ),
+            false => errors
+                .iter()
+                .try_for_each(|e| text::error(&mut err, look, Some(input), e)),
+        };
+        first
+            .and_then(|()| {
+                (known.warnings.iter()).try_for_each(|w| text::warning(&mut err, look, input, w))
+            })
+            .and_then(|()| match errors.is_empty() {
+                true => Ok(()),
+                false => text::counts(&mut err, look, errors.len(), known.warnings.len()),
+            })
+    };
+    finish(written, if errors.is_empty() { 0 } else { 1 })
 }
 
 /// `diagram-render formats`: each format, its engine, and whether that engine runs here.

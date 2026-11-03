@@ -1,0 +1,6 @@
+stateDiagram-v2
+  [*] --> Read
+  Read --> Detect
+  Detect --> Render : known format
+  Detect --> [*] : unknown
+  Render --> [*]

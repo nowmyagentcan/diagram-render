@@ -10,7 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::detect::Format;
-use crate::error::Error;
+use crate::error::{Error, Warning};
+use crate::input::Lines;
+use crate::mermaid;
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -184,6 +186,52 @@ impl Engine {
             Some(ran) => Err(self.failed(&ran)),
             None => Err(Error::engine_slow(self.label, PROBE_LIMIT.as_secs())),
         }
+    }
+}
+
+/// One diagram for an engine: its name in messages, its lines, and how to run the engine.
+pub struct Task<'a> {
+    pub name: &'a str,
+    pub lines: Lines<'a>,
+    pub job: Job<'a>,
+    /// `white`, `transparent` or `#rrggbb`; `None` keeps the diagram's own.
+    pub background: Option<&'a str>,
+}
+
+/// An engine's SVG and what it warned about.
+pub struct Rendered {
+    pub svg: Vec<u8>,
+    pub warnings: Vec<Warning>,
+}
+
+/// What a check found.
+#[derive(Default)]
+pub struct Checked {
+    pub errors: Vec<Error>,
+    pub warnings: Vec<Warning>,
+}
+
+impl Engine {
+    /// Runs the engine on `task`; stopped at the limit is `timeout`.
+    pub fn go(&mut self, args: &[&str], task: &Task) -> Result<Ran, Error> {
+        let ran = self.run(args, &task.job)?;
+        ran.ok_or_else(|| Error::timeout(task.job.limit.as_secs()))
+    }
+}
+
+/// Renders `task` to SVG with the engine for `format`.
+pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
+    match format {
+        Format::Mermaid => mermaid::render(engine, task),
+        _ => Err(Error::internal("no renderer is built in yet")),
+    }
+}
+
+/// Checks `task` with the engine for `format`, without rendering it.
+pub fn check(format: Format, engine: &mut Engine, task: &Task) -> Result<Checked, Error> {
+    match format {
+        Format::Mermaid => mermaid::check(engine, task),
+        _ => Err(Error::internal("no checker is built in yet")),
     }
 }
 

@@ -20,6 +20,8 @@ pub struct Error {
 pub struct Excerpt {
     pub text: String,
     pub caret: Option<usize>,
+    /// Where the problem ends (line, column), when the engine gives a range.
+    pub end: Option<(usize, usize)>,
 }
 
 /// Something worth knowing about a run that still succeeded.
@@ -36,6 +38,15 @@ impl Warning {
             code: "format_guessed",
             message: "Read as D2 (no Mermaid or DOT header found); pass --format to choose.".into(),
             line: None,
+        }
+    }
+
+    /// An engine's own warning, as `{Engine}: {text}` without the engine's `Warning:` label.
+    pub fn engine(engine: &str, text: &str, line: Option<usize>) -> Self {
+        Self {
+            code: "engine_warning",
+            message: format!("{engine}: {}", unlabelled(text)),
+            line,
         }
     }
 
@@ -84,7 +95,7 @@ impl Error {
     pub fn exit_code(&self) -> u8 {
         match self.code {
             c if USAGE.contains(&c) => 2,
-            "engine_missing" | "engine_failed" | "internal" => 3,
+            "engine_missing" | "engine_failed" | "timeout" | "write_failed" | "internal" => 3,
             _ => 1,
         }
     }
@@ -107,9 +118,10 @@ impl Error {
     /// One entry of a check result's `errors`.
     pub fn check_json(&self) -> Value {
         let e = self.json();
+        let (end_line, end_column) = self.excerpt.as_ref().and_then(|x| x.end).unzip();
         json!({
             "code": e["code"], "message": e["message"], "hint": e["hint"],
-            "line": e["line"], "column": e["column"], "end_line": null, "end_column": null,
+            "line": e["line"], "column": e["column"], "end_line": end_line, "end_column": end_column,
             "excerpt": e["excerpt"],
         })
     }
@@ -274,7 +286,9 @@ impl Error {
 
     /// `code` is `exit code 2` or `killed by a signal`; `first` the first line it printed.
     pub fn engine_failed(engine: &str, code: &str, first: Option<&str>) -> Self {
-        let said = first.map(|l| format!(": {}", l.trim())).unwrap_or_default();
+        let said = first
+            .map(|l| format!(": {}", clause(l)))
+            .unwrap_or_default();
         Self::new(
             "engine_failed",
             format!("{engine} stopped unexpectedly ({code}){said}."),
@@ -298,6 +312,43 @@ impl Error {
         )
     }
 
+    /// A diagram error at a line; `input` adds that `check` lists them all, for engines that
+    /// can find more than one.
+    pub fn syntax_error(message: &str, line: usize, input: Option<&str>) -> Self {
+        let more = input.map_or_else(String::new, |i| {
+            format!(" `diagram-render check {i}` lists every error.")
+        });
+        Self::new(
+            "syntax_error",
+            unlabelled(message),
+            format!("Fix line {line}, then run again.{more}"),
+        )
+    }
+
+    pub fn render_failed(engine: &str, said: &str, input: &str) -> Self {
+        Self::new(
+            "render_failed",
+            format!("{engine} couldn't render this diagram: {}.", clause(said)),
+            format!("Run diagram-render check {input}, or --debug for the engine's full output."),
+        )
+    }
+
+    pub fn timeout(seconds: u64) -> Self {
+        Self::new(
+            "timeout",
+            format!("Rendering took longer than {seconds} s and was stopped."),
+            "Simplify the diagram, or raise --timeout (up to 600).",
+        )
+    }
+
+    pub fn write_failed(path: &str, e: &std::io::Error) -> Self {
+        Self::new(
+            "write_failed",
+            format!("Can't write {path}: {}.", reason(e)),
+            "Check the folder exists and isn't read-only.",
+        )
+    }
+
     pub fn internal(detail: &str) -> Self {
         Self::new(
             "internal",
@@ -305,6 +356,24 @@ impl Error {
             "Please report it with --debug output.",
         )
     }
+}
+
+/// An engine's message without its own leading `Error:` or `Warning:` labels (Graphviz can
+/// print two).
+fn unlabelled(text: &str) -> String {
+    let mut text = text.trim();
+    while let Some(rest) = ["Error:", "Warning:", "error:", "warning:"]
+        .iter()
+        .find_map(|label| text.strip_prefix(label))
+    {
+        text = rest.trim_start();
+    }
+    text.into()
+}
+
+/// An engine's message, ready to end a sentence: unlabelled, without its final full stop.
+fn clause(text: &str) -> String {
+    unlabelled(text).trim_end_matches('.').into()
 }
 
 /// The operating system's reason as a clause: "Access is denied. (os error 5)" -> "access is
@@ -338,6 +407,27 @@ mod tests {
             failed.message,
             "D2 stopped unexpectedly (exit code 2): err: bad flag."
         );
+    }
+
+    #[test]
+    fn engine_messages_lose_their_own_labels() {
+        let w = Warning::engine(
+            "Graphviz",
+            "Warning: Warning: no value for width\r",
+            Some(2),
+        );
+        assert_eq!(w.message, "Graphviz: no value for width");
+        let e = Error::render_failed("Graphviz", "Error: mismatched tag in line 1 ", "a.dot");
+        assert_eq!(
+            e.message,
+            "Graphviz couldn't render this diagram: mismatched tag in line 1."
+        );
+        let e = Error::syntax_error("bad", 3, Some("a.mmd"));
+        assert_eq!(
+            e.hint,
+            "Fix line 3, then run again. `diagram-render check a.mmd` lists every error."
+        );
+        assert_eq!(Error::timeout(5).exit_code(), 3);
     }
 
     #[test]
