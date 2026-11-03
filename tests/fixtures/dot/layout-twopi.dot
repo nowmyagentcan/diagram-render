@@ -1,0 +1,6 @@
+graph {
+  layout=twopi
+  a -- b -- c -- d -- a
+  a -- c
+  e -- a
+}

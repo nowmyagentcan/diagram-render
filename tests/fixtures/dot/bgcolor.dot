@@ -1,0 +1,4 @@
+digraph {
+  bgcolor="#fdf6e3"
+  a -> b -> c
+}

@@ -1,0 +1,6 @@
+digraph {
+  node [shape=record fontname=Helvetica]
+  task [label="{Task|name\l|lines\l|job\l}"]
+  job [label="<s> stdin|<d> dir|<l> limit"]
+  task -> job:s
+}

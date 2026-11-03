@@ -1,0 +1,6 @@
+digraph first {
+  a -> b
+}
+graph second {
+  c -- d
+}

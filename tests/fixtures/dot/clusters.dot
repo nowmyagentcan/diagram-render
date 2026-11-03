@@ -1,0 +1,15 @@
+digraph G {
+  compound=true
+  subgraph cluster_in {
+    label="Input"
+    read -> detect
+  }
+  subgraph cluster_out {
+    label="Output"
+    style=filled
+    fillcolor=lightgrey
+    svg; png
+  }
+  detect -> svg [lhead=cluster_out]
+  detect -> png
+}

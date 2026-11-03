@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use crate::detect::Format;
 use crate::error::{Error, Warning};
 use crate::input::Lines;
-use crate::mermaid;
+use crate::{dot, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -223,6 +223,7 @@ impl Engine {
 pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     match format {
         Format::Mermaid => mermaid::render(engine, task),
+        Format::Dot => dot::render(engine, task),
         _ => Err(Error::internal("no renderer is built in yet")),
     }
 }
@@ -231,6 +232,7 @@ pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Render
 pub fn check(format: Format, engine: &mut Engine, task: &Task) -> Result<Checked, Error> {
     match format {
         Format::Mermaid => mermaid::check(engine, task),
+        Format::Dot => dot::check(engine, task),
         _ => Err(Error::internal("no checker is built in yet")),
     }
 }

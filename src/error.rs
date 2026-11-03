@@ -61,6 +61,23 @@ impl Warning {
         }
     }
 
+    /// sfdp in this Graphviz build, which says `Error:` but writes a good SVG.
+    pub fn sfdp_overlaps() -> Self {
+        Self {
+            code: "engine_warning",
+            message: "Graphviz: sfdp laid this out without removing node overlaps (this build has no triangulation library), so nodes may overlap.".into(),
+            line: None,
+        }
+    }
+
+    pub fn extra_graphs_ignored(n: usize) -> Self {
+        Self {
+            code: "extra_graphs_ignored",
+            message: format!("The file has {n} graphs; rendered the first."),
+            line: None,
+        }
+    }
+
     pub fn scale_ignored() -> Self {
         Self {
             code: "scale_ignored",

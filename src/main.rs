@@ -1,6 +1,7 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
 mod detect;
+mod dot;
 mod engine;
 mod error;
 mod input;

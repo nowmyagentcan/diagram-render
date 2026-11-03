@@ -1,0 +1,6 @@
+graph {
+  layout=sfdp
+  a -- b -- c -- d -- a
+  a -- c
+  e -- a
+}

@@ -1,0 +1,6 @@
+graph {
+  layout=circo
+  a -- b -- c -- d -- a
+  a -- c
+  e -- a
+}

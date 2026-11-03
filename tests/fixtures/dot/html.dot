@@ -1,0 +1,8 @@
+digraph {
+  node [shape=plaintext fontname=Courier]
+  t [label=<<table border="0" cellborder="1" cellspacing="0">
+    <tr><td bgcolor="#dde"><b>engine</b></td></tr>
+    <tr><td port="p" align="left"><i>merman</i> 0.9.3<br/>dot 16.1.0</td></tr>
+  </table>>]
+  t:p -> out
+}
