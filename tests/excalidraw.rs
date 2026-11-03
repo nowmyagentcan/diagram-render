@@ -421,12 +421,9 @@ fn a_missing_font_file_is_an_install_fault() {
     let bin = installed("excalidraw-no-fonts", &[]);
     let dir = bin.parent().unwrap();
     fs::create_dir(dir.join("fonts")).unwrap();
-    for entry in fs::read_dir(env!("CARGO_BIN_EXE_diagram-render").replace(
-        &format!("diagram-render{}", std::env::consts::EXE_SUFFIX),
-        "fonts",
-    ))
-    .unwrap()
-    {
+    // The Liberation fonts are there, Excalidraw's aren't.
+    let exe = std::path::Path::new(env!("CARGO_BIN_EXE_diagram-render"));
+    for entry in fs::read_dir(exe.with_file_name("fonts")).unwrap() {
         let path = entry.unwrap().path();
         if path.is_file() {
             fs::copy(&path, dir.join("fonts").join(path.file_name().unwrap())).unwrap();
