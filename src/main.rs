@@ -3,6 +3,7 @@
 mod detect;
 mod error;
 mod input;
+mod output;
 mod text;
 
 use std::ffi::OsString;
@@ -13,6 +14,7 @@ use std::process::ExitCode;
 use detect::Format;
 use error::{Error, Warning};
 use lexopt::Arg::{Long, Short, Value};
+use output::{Target, To};
 use serde_json::json;
 use text::Look;
 
@@ -83,6 +85,9 @@ enum Command {
 #[derive(Default)]
 struct Args {
     input: Option<OsString>,
+    output: Option<OsString>,
+    to: Option<To>,
+    scale: Option<f64>,
     format: Option<Format>,
     page: Option<String>,
     json: bool,
@@ -176,10 +181,10 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             }
             ("--json", _) => args.json = true,
             ("--debug" | "--allow-network", _) => {}
-            ("--output", _) => drop(p.value()?),
-            ("--to", _) => to(&string(&mut p, name)?)?,
+            ("--output", _) => args.output = Some(p.value()?),
+            ("--to", _) => args.to = Some(to(&string(&mut p, name)?)?),
             ("--format", _) => args.format = format(&string(&mut p, name)?)?,
-            ("--scale", _) => drop(scale(&string(&mut p, name)?)?),
+            ("--scale", _) => args.scale = Some(scale(&string(&mut p, name)?)?),
             ("--background", _) => background(&string(&mut p, name)?)?,
             ("--page", _) => args.page = Some(page(string(&mut p, name)?)?),
             ("--timeout", _) => drop(timeout(&string(&mut p, name)?)?),
@@ -271,14 +276,8 @@ fn string(p: &mut lexopt::Parser, option: &str) -> Result<String, Error> {
         .map_err(|_| Error::invalid_option(format!("{option} isn't valid text."), try_hint(option)))
 }
 
-fn to(v: &str) -> Result<(), Error> {
-    match v.to_ascii_lowercase().as_str() {
-        "svg" | "png" => Ok(()),
-        _ => Err(Error::invalid_option(
-            "--to must be svg or png.",
-            try_hint("--to"),
-        )),
-    }
+fn to(v: &str) -> Result<To, Error> {
+    To::parse(v).ok_or_else(|| Error::invalid_option("--to must be svg or png.", try_hint("--to")))
 }
 
 fn format(v: &str) -> Result<Option<Format>, Error> {
@@ -360,6 +359,21 @@ fn run(command: Command, args: Args) -> u8 {
     } else {
         "stdin"
     };
+    let mut warnings = vec![];
+    let mut target = None;
+    if command == Command::Render {
+        let (output, to) = match output::target(&arg, args.output.as_deref(), args.to) {
+            Ok(target) => target,
+            Err(e) => return usage(&e, args.json),
+        };
+        if args.json && output == Target::Stdout {
+            return usage(&Error::json_needs_output(), args.json);
+        }
+        if args.scale.is_some() && to == To::Svg {
+            warnings.push(Warning::scale_ignored());
+        }
+        target = Some(output);
+    }
     let mut known = Known {
         format: args.format,
         ..Known::default()
@@ -372,10 +386,16 @@ fn run(command: Command, args: Args) -> u8 {
     if args.page.is_some() && !diagram.format.has_pages() {
         return usage(&Error::page_not_supported(diagram.format.name()), args.json);
     }
+    // With --page the name holds the page's, so it can't be the input's.
+    if let (Some(Target::File(out)), Some(path), None) = (&target, path, &args.page)
+        && output::is_input(out, path)
+    {
+        return usage(&Error::output_is_input(&out.to_string_lossy()), args.json);
+    }
     known = Known {
         format: Some(diagram.format),
         diagram_type: diagram.diagram_type,
-        warnings: diagram.warnings,
+        warnings: [diagram.warnings, warnings].concat(),
     };
     let e = Error::internal("no renderer is built in yet");
     failed(command, &name, &known, &e, args.json)

@@ -327,7 +327,7 @@ fn stdin_too_large_or_empty_says_stdin() {
         err.starts_with("✗ -: stdin is over 64 MiB; the limit is 64 MiB"),
         "{err}"
     );
-    let (code, out, _) = run_in(&dir, &["-", "--json"], b"");
+    let (code, out, _) = run_in(&dir, &["-", "-o", "x.svg", "--json"], b"");
     assert_eq!(code, 1);
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(
@@ -417,7 +417,12 @@ fn detection_reports_the_format_its_engine_and_the_guess() {
     std::fs::write(dir.join("notes.txt"), "a -> b\n").unwrap();
     std::fs::write(dir.join("flow.mmd"), "flowchart LR\n  a --> b\n").unwrap();
     let cases: &[(&[&str], &[u8], &str, &str)] = &[
-        (&["-"], b"graph TD; A-->B", "mermaid", "flowchart"),
+        (
+            &["-", "-o", "x.svg"],
+            b"graph TD; A-->B",
+            "mermaid",
+            "flowchart",
+        ),
         (&["check", "-"], b"digraph { a -> b }", "dot", "digraph"),
         (&["check", "flow.mmd"], b"", "mermaid", "flowchart"),
         (
@@ -540,9 +545,106 @@ fn page_is_a_usage_error_for_formats_without_pages() {
             json!({"error": {"code": "page_not_supported", "message": message, "hint": "Drop --page."}})
         );
     }
-    let (_, out, _) = run_in(&dir, &["-", "--page", "2", "--json"], b"a -> b");
+    let (_, out, _) = run_in(
+        &dir,
+        &["-", "--page", "2", "-o", "x.svg", "--json"],
+        b"a -> b",
+    );
     assert_ne!(
         serde_json::from_str::<Value>(&out).unwrap()["error"]["code"],
         "page_not_supported"
+    );
+}
+
+#[test]
+fn output_choices_that_cant_work_are_usage_errors() {
+    let dir = folder("outputs");
+    let drawio =
+        r#"<svg xmlns="http://www.w3.org/2000/svg" content="&lt;mxfile&gt;&lt;/mxfile&gt;"/>"#;
+    std::fs::write(dir.join("board.svg"), drawio).unwrap();
+    let cases: &[(&[&str], &str, &str, &str)] = &[
+        (
+            &["a.mmd", "-o", "a.png", "--to", "svg"],
+            "format_conflict",
+            "-o says PNG but --to says SVG.",
+            "Drop --to, or change the extension of -o.",
+        ),
+        (
+            &["a.mmd", "-o", "a.jpg"],
+            "bad_extension",
+            "The output must end in .svg or .png.",
+            "For example: -o flow.png.",
+        ),
+        (
+            &["-", "--json"],
+            "json_needs_output",
+            "--json needs -o FILE when the image would go to stdout.",
+            "Add -o flow.svg, or drop --json.",
+        ),
+        (
+            &["a.mmd", "-o", "-", "--json"],
+            "json_needs_output",
+            "--json needs -o FILE when the image would go to stdout.",
+            "Add -o flow.svg, or drop --json.",
+        ),
+        (
+            &["board.svg"],
+            "output_is_input",
+            "The output would replace the input, board.svg.",
+            "Pass -o with another file name.",
+        ),
+        (
+            &["board.svg", "-o", "./board.svg"],
+            "output_is_input",
+            "The output would replace the input, ./board.svg.",
+            "Pass -o with another file name.",
+        ),
+    ];
+    for (args, code, message, hint) in cases {
+        let (exit, out, err) = run_in(&dir, args, b"graph TD");
+        assert_eq!(exit, 2, "{args:?}");
+        if args.contains(&"--json") {
+            let v: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(
+                v,
+                json!({"error": {"code": code, "message": message, "hint": hint}})
+            );
+        } else {
+            assert_eq!(err, format!("✗ {message}\n  {hint}\n"), "{args:?}");
+        }
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("board.svg")).unwrap(),
+        drawio
+    );
+    // check writes nothing, so it has no output to refuse.
+    let (_, out, _) = run_in(&dir, &["check", "-", "--json"], b"graph TD");
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["format"],
+        "mermaid"
+    );
+}
+
+#[test]
+fn scale_with_svg_output_is_a_warning() {
+    let dir = folder("scale");
+    let (_, out, _) = run_in(
+        &dir,
+        &["-", "--scale", "3", "-o", "x.svg", "--json"],
+        b"graph TD",
+    );
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["warnings"],
+        json!([{"code": "scale_ignored", "message": "--scale applies to PNG only."}])
+    );
+    let (_, out, _) = run_in(
+        &dir,
+        &["-", "--scale", "3", "-o", "x.png", "--json"],
+        b"graph TD",
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&out).unwrap()["warnings"],
+        json!([])
     );
 }

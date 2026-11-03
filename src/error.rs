@@ -39,6 +39,14 @@ impl Warning {
         }
     }
 
+    pub fn scale_ignored() -> Self {
+        Self {
+            code: "scale_ignored",
+            message: "--scale applies to PNG only.".into(),
+            line: None,
+        }
+    }
+
     pub fn json(&self) -> Value {
         let mut w = json!({"code": self.code, "message": self.message});
         if let Some(line) = self.line {
@@ -53,6 +61,10 @@ const USAGE: &[&str] = &[
     "one_input_only",
     "no_input",
     "page_not_supported",
+    "format_conflict",
+    "bad_extension",
+    "json_needs_output",
+    "output_is_input",
 ];
 
 impl Error {
@@ -216,6 +228,39 @@ impl Error {
             "page_not_supported",
             format!("{format} diagrams have no pages."),
             "Drop --page.",
+        )
+    }
+
+    pub fn format_conflict(output: &str, to: &str) -> Self {
+        let (output, to) = (output.to_uppercase(), to.to_uppercase());
+        Self::new(
+            "format_conflict",
+            format!("-o says {output} but --to says {to}."),
+            "Drop --to, or change the extension of -o.",
+        )
+    }
+
+    pub fn bad_extension() -> Self {
+        Self::new(
+            "bad_extension",
+            "The output must end in .svg or .png.",
+            "For example: -o flow.png.",
+        )
+    }
+
+    pub fn json_needs_output() -> Self {
+        Self::new(
+            "json_needs_output",
+            "--json needs -o FILE when the image would go to stdout.",
+            "Add -o flow.svg, or drop --json.",
+        )
+    }
+
+    pub fn output_is_input(path: &str) -> Self {
+        Self::new(
+            "output_is_input",
+            format!("The output would replace the input, {path}."),
+            "Pass -o with another file name.",
         )
     }
 

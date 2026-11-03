@@ -1,6 +1,7 @@
 //! Which diagram language an input is: `--format` first, then the file extension, then the
 //! content (XML root, JSON type, PNG text chunks, the Mermaid keyword or DOT header), else D2.
 
+use std::ffi::OsString;
 use std::path::Path;
 
 use crate::error::{Error, Warning};
@@ -165,6 +166,19 @@ fn by_extension(path: &Path) -> Result<Option<Format>, Error> {
         "vsdx" | "vsd" => Err(Error::unsupported_visio()),
         _ => Ok(None),
     }
+}
+
+/// The file name of `path` without its diagram extension (or else its last one), as given: never
+/// transcoded, so any name the system allows survives.
+pub fn stem(path: &Path) -> OsString {
+    let name = path.file_name().unwrap_or_default();
+    let lower = name.to_string_lossy().to_ascii_lowercase();
+    let known = EXTENSIONS.iter().find(|(ext, _)| lower.ends_with(ext));
+    let mut stem = Path::new(name);
+    for _ in 0..known.map_or(1, |(ext, _)| ext.matches('.').count()) {
+        stem = Path::new(stem.file_stem().unwrap_or(stem.as_os_str()));
+    }
+    stem.as_os_str().to_owned()
 }
 
 /// The format a PNG's text chunks embed.
@@ -648,5 +662,22 @@ mod tests {
         );
         let bpmn = format!("<mxfile>{}</mxfile>", " ".repeat(4 << 20));
         assert!(detect(None, "stdin", bpmn.as_bytes(), None).is_ok());
+    }
+
+    #[test]
+    fn stems_drop_the_diagram_extension_or_the_last_one() {
+        let cases = [
+            ("flow.mmd", "flow"),
+            ("dir/Board.DRAWIO.PNG", "Board"),
+            ("scene.excalidraw.png", "scene"),
+            ("a.b.excalidraw.json", "a.b"),
+            ("notes.v2.txt", "notes.v2"),
+            ("noext", "noext"),
+            (".mmd", ".mmd"),
+            ("été.d2", "été"),
+        ];
+        for (path, want) in cases {
+            assert_eq!(stem(Path::new(path)), want, "{path}");
+        }
     }
 }
