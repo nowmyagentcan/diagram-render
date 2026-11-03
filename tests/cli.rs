@@ -234,10 +234,13 @@ fn folder(name: &str) -> std::path::PathBuf {
 
 /// Runs in `dir` with `stdin` as input: exit code, stdout and stderr.
 fn run_in(dir: &std::path::Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) {
+    feed(cmd(args), dir, stdin)
+}
+
+/// Runs `cmd` in `dir` with `stdin` as input: exit code, stdout and stderr.
+fn feed(mut cmd: Command, dir: &std::path::Path, stdin: &[u8]) -> (i32, String, String) {
     use std::io::Write;
-    let mut child = cmd(args)
-        .current_dir(dir)
-        .stdin(Stdio::piped())
+    let mut child = (cmd.current_dir(dir).stdin(Stdio::piped()))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -666,25 +669,11 @@ fn installed(name: &str, engines: &[&str]) -> std::path::PathBuf {
     bin
 }
 
+/// Runs the copy `bin` in its own folder.
 fn run_at(bin: &std::path::Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) {
-    use std::io::Write;
-    let mut child = Command::new(bin)
-        .args(args)
-        .current_dir(bin.parent().unwrap())
-        .env_remove("NO_COLOR")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(stdin).unwrap();
-    let out = child.wait_with_output().unwrap();
-    let text = |b| String::from_utf8(b).unwrap();
-    (
-        out.status.code().unwrap(),
-        text(out.stdout),
-        text(out.stderr),
-    )
+    let mut cmd = Command::new(bin);
+    cmd.args(args).env_remove("NO_COLOR");
+    feed(cmd, bin.parent().unwrap(), stdin)
 }
 
 #[test]

@@ -277,34 +277,26 @@ fn try_hint(option: &str) -> String {
 
 impl From<lexopt::Error> for Error {
     fn from(e: lexopt::Error) -> Self {
-        lexopt_error(e)
-    }
-}
-
-fn lexopt_error(e: lexopt::Error) -> Error {
-    match e {
-        lexopt::Error::MissingValue {
-            option: Some(option),
-        } => {
-            let option = if option == "-o" {
-                "--output".into()
-            } else {
-                option
-            };
-            Error::invalid_option(format!("{option} needs a value."), try_hint(&option))
+        match e {
+            lexopt::Error::MissingValue {
+                option: Some(option),
+            } => {
+                let option = if option == "-o" {
+                    "--output".into()
+                } else {
+                    option
+                };
+                Error::invalid_option(format!("{option} needs a value."), try_hint(&option))
+            }
+            lexopt::Error::UnexpectedValue { option, .. } => Error::invalid_option(
+                format!("{option} takes no value."),
+                format!("Write {option} on its own."),
+            ),
+            e => Error::invalid_option(
+                format!("{e}."),
+                "Run diagram-render --help for the options.",
+            ),
         }
-        lexopt::Error::UnexpectedValue { option, .. } => Error::invalid_option(
-            format!("{option} takes no value."),
-            format!("Write {option} on its own."),
-        ),
-        lexopt::Error::NonUnicodeValue(_) => Error::invalid_option(
-            "An option's value isn't valid text.",
-            "Use plain text for option values.",
-        ),
-        e => Error::invalid_option(
-            format!("{e}."),
-            "Run diagram-render --help for the options.",
-        ),
     }
 }
 
