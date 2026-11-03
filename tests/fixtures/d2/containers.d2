@@ -1,0 +1,7 @@
+cloud: {
+  api: API
+  db: Database {shape: cylinder}
+  api -> db: query
+}
+user: {shape: person}
+user -> cloud.api: request

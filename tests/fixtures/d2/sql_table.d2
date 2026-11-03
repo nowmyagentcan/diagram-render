@@ -1,0 +1,11 @@
+users: {
+  shape: sql_table
+  id: int {constraint: primary_key}
+  name: varchar
+}
+posts: {
+  shape: sql_table
+  id: int {constraint: primary_key}
+  author: int {constraint: foreign_key}
+}
+posts.author -> users.id

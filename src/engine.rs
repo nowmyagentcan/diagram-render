@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use crate::detect::Format;
 use crate::error::{Error, Warning};
 use crate::input::Lines;
-use crate::{dot, mermaid};
+use crate::{d2, dot, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -52,6 +52,7 @@ pub struct Engine {
 }
 
 /// What an engine is given besides its arguments.
+#[derive(Clone)]
 pub struct Job<'a> {
     pub stdin: &'a [u8],
     /// Its working folder, so relative imports and images resolve as they would for its own CLI.
@@ -196,6 +197,10 @@ pub struct Task<'a> {
     pub job: Job<'a>,
     /// `white`, `transparent` or `#rrggbb`; `None` keeps the diagram's own.
     pub background: Option<&'a str>,
+    /// The D2 board to render; `None` for the root.
+    pub page: Option<&'a str>,
+    /// Whether D2 may fetch remote images.
+    pub allow_network: bool,
 }
 
 /// An engine's SVG and what it warned about.
@@ -224,6 +229,7 @@ pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Render
     match format {
         Format::Mermaid => mermaid::render(engine, task),
         Format::Dot => dot::render(engine, task),
+        Format::D2 => d2::render(engine, task),
         _ => Err(Error::internal("no renderer is built in yet")),
     }
 }
@@ -233,6 +239,7 @@ pub fn check(format: Format, engine: &mut Engine, task: &Task) -> Result<Checked
     match format {
         Format::Mermaid => mermaid::check(engine, task),
         Format::Dot => dot::check(engine, task),
+        Format::D2 => d2::check(engine, task),
         _ => Err(Error::internal("no checker is built in yet")),
     }
 }

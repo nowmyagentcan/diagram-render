@@ -38,11 +38,13 @@ pub enum Target {
     File(PathBuf),
 }
 
-/// The output for `input` (`-` for stdin) and its format, from `-o` and `--to`.
+/// The output for `input` (`-` for stdin) and its format, from `-o` and `--to`; beside the
+/// input, a `page` goes in the name.
 pub fn target(
     input: &OsStr,
     output: Option<&OsStr>,
     to: Option<To>,
+    page: Option<&str>,
 ) -> Result<(Target, To), Error> {
     let file = match output {
         Some(o) if o == "-" => return Ok((Target::Stdout, to.unwrap_or(To::Svg))),
@@ -52,6 +54,14 @@ pub fn target(
             let to = to.unwrap_or(To::Svg);
             let input = Path::new(input);
             let mut name = detect::stem(input);
+            if let Some(page) = page {
+                let safe = |c: char| match c {
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+                    c if c.is_control() => '_',
+                    c => c,
+                };
+                name.push(format!("-{}", page.chars().map(safe).collect::<String>()));
+            }
             name.push(format!(".{}", to.ext()));
             return Ok((Target::File(input.with_file_name(name)), to));
         }
@@ -109,7 +119,27 @@ mod tests {
     use super::*;
 
     fn named(input: &str, output: Option<&str>, to: Option<To>) -> Result<(Target, To), Error> {
-        target(OsStr::new(input), output.map(OsStr::new), to)
+        target(OsStr::new(input), output.map(OsStr::new), to, None)
+    }
+
+    #[test]
+    fn a_page_goes_in_the_name_with_unsafe_characters_replaced() {
+        let paged = |page| target(OsStr::new("dir/board.d2"), None, None, Some(page));
+        assert_eq!(
+            paged("layers.deploy"),
+            Ok((file("dir/board-layers.deploy.svg"), To::Svg))
+        );
+        assert_eq!(
+            paged("a/b:c*\u{7}é"),
+            Ok((file("dir/board-a_b_c__é.svg"), To::Svg))
+        );
+        let given = target(
+            OsStr::new("b.d2"),
+            Some(OsStr::new("x.svg")),
+            None,
+            Some("p"),
+        );
+        assert_eq!(given, Ok((file("x.svg"), To::Svg)));
     }
 
     fn file(path: &str) -> Target {

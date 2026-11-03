@@ -1,5 +1,6 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
+mod d2;
 mod detect;
 mod dot;
 mod engine;
@@ -140,6 +141,7 @@ struct Args {
     background: Option<String>,
     page: Option<String>,
     timeout: Option<u64>,
+    allow_network: bool,
     json: bool,
     debug: bool,
 }
@@ -221,7 +223,7 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             }
             ("--json", _) => args.json = true,
             ("--debug", _) => args.debug = true,
-            ("--allow-network", _) => {}
+            ("--allow-network", _) => args.allow_network = true,
             ("--output", _) => args.output = Some(p.value()?),
             ("--to", _) => args.to = Some(to(&string(&mut p, name)?)?),
             ("--format", _) => args.format = format(&string(&mut p, name)?)?,
@@ -409,7 +411,8 @@ fn run(command: Command, args: Args) -> u8 {
     let mut warnings = vec![];
     let mut target = None;
     if command == Command::Render {
-        let (output, to) = match output::target(arg, args.output.as_deref(), args.to) {
+        let page = args.page.as_deref();
+        let (output, to) = match output::target(arg, args.output.as_deref(), args.to, page) {
             Ok(target) => target,
             Err(e) => return usage(&e, args.json),
         };
@@ -433,8 +436,7 @@ fn run(command: Command, args: Args) -> u8 {
     if args.page.is_some() && !diagram.format.has_pages() {
         return usage(&Error::page_not_supported(diagram.format.name()), args.json);
     }
-    // With --page the name holds the page's, so it can't be the input's.
-    if let (Some((Target::File(out), _)), Some(path), None) = (&target, path, &args.page)
+    if let (Some((Target::File(out), _)), Some(path)) = (&target, path)
         && output::is_input(out, path)
     {
         return usage(&Error::output_is_input(&out.to_string_lossy()), args.json);
@@ -471,6 +473,8 @@ fn run(command: Command, args: Args) -> u8 {
             limit: Duration::from_secs(args.timeout.unwrap_or(60)),
         },
         background: args.background.as_deref(),
+        page: args.page.as_deref(),
+        allow_network: args.allow_network,
     };
     let format = diagram.format;
     let done = match target {
@@ -520,6 +524,7 @@ fn run(command: Command, args: Args) -> u8 {
                 height,
                 bytes: svg.len(),
                 took: start.elapsed(),
+                page: args.page.as_deref(),
             };
             renders(&known, to, &made, target == Target::Stdout, args.json)
         }
@@ -534,7 +539,9 @@ fn renders(known: &Known, to: To, made: &Made, image_on_stdout: bool, json: bool
         let result = json!({
             "input": made.input, "format": format.id(), "diagram_type": known.diagram_type,
             "output": made.output, "to": to.ext(), "width": made.width, "height": made.height,
-            "bytes": made.bytes, "scale": null, "page": null, "pages": [],
+            // d2 can't list its boards, so a board has a name but no number.
+            "bytes": made.bytes, "scale": null,
+            "page": made.page.map(|name| json!({"index": null, "name": name})), "pages": [],
             "warnings": known.warnings.iter().map(Warning::json).collect::<Vec<_>>(),
             "engine": {"name": name, "version": version},
             "elapsed_ms": made.took.as_millis() as u64,

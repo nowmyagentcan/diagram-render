@@ -170,6 +170,7 @@ pub struct Made<'a> {
     pub height: u32,
     pub bytes: usize,
     pub took: Duration,
+    pub page: Option<&'a str>,
 }
 
 /// `✓ flow.mmd → flow.svg  1180×640  18 KB  0.21 s`.

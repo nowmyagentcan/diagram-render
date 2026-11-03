@@ -78,6 +78,25 @@ impl Warning {
         }
     }
 
+    pub fn background_ignored() -> Self {
+        Self {
+            code: "background_ignored",
+            message: "D2 uses its theme's background; --background was ignored.".into(),
+            line: None,
+        }
+    }
+
+    pub fn remote_images_not_fetched(n: usize) -> Self {
+        let images = if n == 1 { "image" } else { "images" };
+        Self {
+            code: "remote_images_not_fetched",
+            message: format!(
+                "Left {n} remote {images} as links; a browser loads them when it shows the SVG. Use --allow-network to embed them."
+            ),
+            line: None,
+        }
+    }
+
     pub fn scale_ignored() -> Self {
         Self {
             code: "scale_ignored",
@@ -358,6 +377,15 @@ impl Error {
             "render_failed",
             format!("{engine} couldn't render this diagram: {}.", clause(said)),
             format!("Run diagram-render check {input}, or --debug for the engine's full output."),
+        )
+    }
+
+    /// D2 can't list its boards, so the message can't either.
+    pub fn board_not_found(page: &str) -> Self {
+        Self::new(
+            "page_not_found",
+            format!("D2 found no board {page}."),
+            "Pass --page with a board's path, such as layers.deploy, or leave it out for the root board.",
         )
     }
 

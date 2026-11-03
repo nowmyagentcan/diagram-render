@@ -408,11 +408,9 @@ fn detection_reports_the_format_its_engine_and_the_guess() {
             &json!([{"code": "format_guessed", "message": guessed}])
         )
     );
-    let (_, _, err) = run_in(&dir, &["notes.txt"], b"");
-    assert!(
-        err.starts_with(&format!("! notes.txt: {guessed}\n✗ notes.txt: ")),
-        "{err}"
-    );
+    let (code, out, err) = run_in(&dir, &["notes.txt"], b"");
+    assert_eq!((code, err), (0, format!("! notes.txt: {guessed}\n")));
+    assert!(out.starts_with("✓ notes.txt → notes.svg  "), "{out}");
 }
 
 #[test]
