@@ -108,14 +108,38 @@ pub fn escape(s: &str) -> String {
     out
 }
 
-/// `✗ [input: ]message`, then the hint indented on the next line.
+/// `✗ [input[:line[:column]]: ]message`, the source line with a caret under the column when the
+/// error has a place, then the hint.
 pub fn error(w: &mut impl Write, look: Look, input: Option<&str>, e: &Error) -> io::Result<()> {
     let mark = look.paint(RED, look.pick("✗", "x"));
-    let place = input
-        .map(|i| format!("{}: ", escape(i)))
-        .unwrap_or_default();
+    let place = input.map_or_else(String::new, |i| {
+        let line = e.line.map(|l| format!(":{l}")).unwrap_or_default();
+        let column = e.line.and(e.column).map(|c| format!(":{c}"));
+        format!("{}{line}{}: ", escape(i), column.unwrap_or_default())
+    });
     let message = look.paint(BOLD, &escape(&e.message));
     writeln!(w, "{mark} {place}{message}")?;
+    if let (Some(line), Some(x)) = (e.line, &e.excerpt) {
+        let shown = |c: char| match c {
+            '…' if look.ascii => "...".to_string(),
+            c => escape(c.encode_utf8(&mut [0; 4])),
+        };
+        let n = line.to_string();
+        let text: String = x.text.chars().map(shown).collect();
+        writeln!(w, "    {} {text}", look.paint(DIM, &format!("{n} |")))?;
+        if let Some(caret) = x.caret {
+            // Tabs stay tabs, so the caret lines up however wide the terminal draws them.
+            let pad: String = (x.text.chars().take(caret - 1))
+                .map(|c| match c {
+                    '\t' => "\t".into(),
+                    c => " ".repeat(shown(c).chars().count()),
+                })
+                .collect();
+            let gutter = format!("{:w$} |", "", w = n.len());
+            let caret = look.paint(DIM, "^");
+            writeln!(w, "    {} {pad}{caret}", look.paint(DIM, &gutter))?;
+        }
+    }
     writeln!(w, "  {}", look.paint(DIM, &escape(&e.hint)))
 }
 
@@ -150,6 +174,28 @@ mod tests {
             "\x1b[31m✗\x1b[0m a.mmd: \x1b[1mNo diagram given.\x1b[0m\n  \x1b[2mTry: diagram-render flow.mmd, or diagram-render --help.\x1b[0m\n"
         );
         assert!(printed(ASCII, None, &e).starts_with("x No diagram given.\n"));
+    }
+
+    #[test]
+    fn placed_errors_show_the_line_and_a_caret() {
+        let lines = crate::input::Lines::new("graph TD\n  A --> B\n\tA --> B --\n");
+        let e = lines.place(Error::not_utf8(3), 3, Some(10));
+        assert_eq!(
+            printed(Look::default(), Some("flow.mmd"), &e),
+            "✗ flow.mmd:3:10: Line 3 isn't valid UTF-8 text.\n    3 | \tA --> B --\n      | \t        ^\n  Save the file as UTF-8.\n"
+        );
+        let e = lines.place(Error::not_utf8(3), 3, None);
+        assert_eq!(
+            printed(Look::default(), Some("flow.mmd"), &e),
+            "✗ flow.mmd:3: Line 3 isn't valid UTF-8 text.\n    3 | \tA --> B --\n  Save the file as UTF-8.\n"
+        );
+        let long = format!("{}\u{1b}x", "a".repeat(300));
+        let e = crate::input::Lines::new(&long).place(Error::not_utf8(1), 1, Some(302));
+        let ascii = printed(ASCII, Some("a"), &e);
+        let rows: Vec<_> = ascii.lines().collect();
+        assert!(rows[1].starts_with("    1 | ...aaa"), "{}", rows[1]);
+        assert!(rows[1].ends_with("a<U+001B>x"), "{}", rows[1]);
+        assert_eq!(rows[2].find('^'), rows[1].rfind('x'));
     }
 
     #[test]

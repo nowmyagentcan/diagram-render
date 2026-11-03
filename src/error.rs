@@ -1,14 +1,25 @@
-//! Every failure the tool reports: a stable code, a sentence saying what happened and a sentence
-//! saying what to do.
+//! Every failure the tool reports: a stable code, a sentence saying what happened, a sentence
+//! saying what to do, and where in the source it is when that is known.
 
 use serde_json::{Value, json};
 
-/// A failure: what went wrong and how to fix it.
+/// A failure: what went wrong and how to fix it, with its place in the source when known.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Error {
     pub code: &'static str,
     pub message: String,
     pub hint: String,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub excerpt: Option<Box<Excerpt>>,
+}
+
+/// A source line as shown under an error, cut to 200 characters, and the character (from 1)
+/// the caret points at in that cut text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Excerpt {
+    pub text: String,
+    pub caret: Option<usize>,
 }
 
 const USAGE: &[&str] = &["invalid_option", "one_input_only", "no_input"];
@@ -19,6 +30,9 @@ impl Error {
             code,
             message: message.into(),
             hint: hint.into(),
+            line: None,
+            column: None,
+            excerpt: None,
         }
     }
 
@@ -40,9 +54,9 @@ impl Error {
     pub fn json(&self) -> Value {
         let mut e = json!({"code": self.code, "message": self.message, "hint": self.hint});
         if !self.is_usage() {
-            e["line"] = Value::Null;
-            e["column"] = Value::Null;
-            e["excerpt"] = Value::Null;
+            e["line"] = self.line.into();
+            e["column"] = self.column.into();
+            e["excerpt"] = self.excerpt.as_ref().map(|x| x.text.as_str()).into();
         }
         e
     }
@@ -77,6 +91,55 @@ impl Error {
         )
     }
 
+    pub fn file_not_found(path: &str) -> Self {
+        let cwd = std::env::current_dir().map_or_else(|_| ".".into(), |d| d.display().to_string());
+        Self::new(
+            "file_not_found",
+            format!("Can't find {path}."),
+            format!("Check the path; relative paths start from {cwd}."),
+        )
+    }
+
+    pub fn not_a_file(path: &str) -> Self {
+        Self::new(
+            "not_a_file",
+            format!("{path} is a folder."),
+            "Give one diagram file.",
+        )
+    }
+
+    pub fn read_failed(path: &str, e: &std::io::Error) -> Self {
+        Self::new(
+            "read_failed",
+            format!("Can't read {path}: {}.", reason(e)),
+            "Check that the file isn't locked and that you can open it.",
+        )
+    }
+
+    pub fn too_large(path: &str, size: &str) -> Self {
+        Self::new(
+            "too_large",
+            format!("{path} is {size}; the limit is 64 MiB (4 MiB for Mermaid, DOT and D2 text)."),
+            "Split the diagram, or remove embedded images.",
+        )
+    }
+
+    pub fn empty_input() -> Self {
+        Self::new(
+            "empty_input",
+            "The diagram is empty.",
+            "Write some diagram source, or check the file.",
+        )
+    }
+
+    pub fn not_utf8(line: usize) -> Self {
+        Self::new(
+            "not_utf8",
+            format!("Line {line} isn't valid UTF-8 text."),
+            "Save the file as UTF-8.",
+        )
+    }
+
     pub fn internal(detail: &str) -> Self {
         Self::new(
             "internal",
@@ -84,6 +147,18 @@ impl Error {
             "Please report it with --debug output.",
         )
     }
+}
+
+/// The operating system's reason as a clause: "Access is denied. (os error 5)" -> "access is
+/// denied".
+fn reason(e: &std::io::Error) -> String {
+    let text = e.to_string();
+    let text = text.split(" (os error").next().unwrap_or_default();
+    let text = text.trim_end_matches('.');
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map_or_else(String::new, |c| c.to_lowercase().chain(chars).collect())
 }
 
 #[cfg(test)]
@@ -95,6 +170,14 @@ mod tests {
         assert_eq!(Error::no_input().exit_code(), 2);
         assert_eq!(Error::one_input_only().exit_code(), 2);
         assert_eq!(Error::internal("x").exit_code(), 3);
+    }
+
+    #[test]
+    fn os_reasons_read_as_a_clause() {
+        let e = std::io::Error::from_raw_os_error(2);
+        assert!(!reason(&e).contains("os error"));
+        assert!(reason(&e).starts_with(char::is_lowercase));
+        assert_eq!(reason(&std::io::Error::other("Locked.")), "locked");
     }
 
     #[test]

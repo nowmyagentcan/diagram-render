@@ -1,6 +1,7 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
 mod error;
+mod input;
 mod text;
 
 use std::ffi::OsString;
@@ -103,8 +104,7 @@ fn main() -> ExitCode {
     let code = match parse(command, rest) {
         Ok(Parsed::Print(text)) => finish(io::stdout().write_all(text.as_bytes()), 0),
         Ok(Parsed::Run(args)) => run(command, args),
-        Err(e) if json => finish(writeln!(io::stdout(), "{}", json!({"error": e.json()})), 2),
-        Err(e) => finish(text::error(&mut io::stderr(), Look::stderr(), None, &e), 2),
+        Err(e) => usage(&e, json),
     };
     ExitCode::from(code)
 }
@@ -357,15 +357,14 @@ fn timeout(v: &str) -> Result<u64, Error> {
 }
 
 fn run(command: Command, args: Args) -> u8 {
-    let Some(input) = args.input else {
-        let e = Error::no_input();
-        return match args.json {
-            true => finish(writeln!(io::stdout(), "{}", json!({"error": e.json()})), 2),
-            false => finish(text::error(&mut io::stderr(), Look::stderr(), None, &e), 2),
-        };
+    let Some(arg) = args.input else {
+        return usage(&Error::no_input(), args.json);
     };
-    let name = input.to_string_lossy();
-    let e = Error::internal("no renderer is built in yet");
+    let name = arg.to_string_lossy().into_owned();
+    let e = match input::read(&arg).and_then(|bytes| input::text(&bytes)) {
+        Ok(_) => Error::internal("no renderer is built in yet"),
+        Err(e) => e,
+    };
     let written = if args.json {
         let result = match command {
             Command::Render => json!({
@@ -380,6 +379,15 @@ fn run(command: Command, args: Args) -> u8 {
         writeln!(io::stdout(), "{result}")
     } else {
         text::error(&mut io::stderr(), Look::stderr(), Some(&name), &e)
+    };
+    finish(written, e.exit_code())
+}
+
+/// Reports a usage error, as JSON on stdout or as two lines on stderr.
+fn usage(e: &Error, json: bool) -> u8 {
+    let written = match json {
+        true => writeln!(io::stdout(), "{}", json!({"error": e.json()})),
+        false => text::error(&mut io::stderr(), Look::stderr(), None, e),
     };
     finish(written, e.exit_code())
 }

@@ -198,8 +198,8 @@ fn closed_stdout_or_stderr_ends_quietly_with_the_run_s_code() {
         (&["check", "--help"], 0),
         (&["--scale", "9"], 2),
         (&["--scale", "9", "--json"], 2),
-        (&["a.mmd", "--json"], 3),
-        (&["check", "a.mmd", "--json"], 3),
+        (&["a.mmd", "--json"], 1),
+        (&["check", "a.mmd", "--json"], 1),
     ];
     for (args, want) in cases {
         let out = cmd(args).stdout(closed()).output().unwrap();
@@ -219,4 +219,194 @@ fn closed_stdout_or_stderr_ends_quietly_with_the_run_s_code() {
             "{args:?} with stderr closed"
         );
     }
+}
+
+/// A fresh, empty folder for one test.
+fn folder(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("diagram-render-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Runs in `dir` with `stdin` as input: exit code, stdout and stderr.
+fn run_in(dir: &std::path::Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) {
+    use std::io::Write;
+    let mut child = cmd(args)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut pipe = child.stdin.take().unwrap();
+    let stdin = stdin.to_vec();
+    let feeder = std::thread::spawn(move || {
+        let _ = pipe.write_all(&stdin);
+    });
+    let out = child.wait_with_output().unwrap();
+    feeder.join().unwrap();
+    let text = |b| String::from_utf8(b).unwrap();
+    (
+        out.status.code().unwrap(),
+        text(out.stdout),
+        text(out.stderr),
+    )
+}
+
+#[test]
+fn input_errors_name_the_file_and_what_to_do() {
+    let dir = folder("input-errors");
+    std::fs::create_dir(dir.join("sub.mmd")).unwrap();
+    std::fs::write(dir.join("blank.mmd"), " \r\n\t\r\n").unwrap();
+    let big = std::fs::File::create(dir.join("big.excalidraw")).unwrap();
+    big.set_len((64 << 20) + 1).unwrap();
+    drop(big);
+    let cases: &[(&str, &str, &str, &str)] = &[
+        (
+            "missing.mmd",
+            "file_not_found",
+            "Can't find missing.mmd.",
+            "Check the path; relative paths start from ",
+        ),
+        (
+            "sub.mmd",
+            "not_a_file",
+            "sub.mmd is a folder.",
+            "Give one diagram file.",
+        ),
+        (
+            "blank.mmd",
+            "empty_input",
+            "The diagram is empty.",
+            "Write some diagram source, or check the file.",
+        ),
+        (
+            "big.excalidraw",
+            "too_large",
+            "big.excalidraw is 64.0 MiB; the limit is 64 MiB (4 MiB for Mermaid, DOT and D2 text).",
+            "Split the diagram, or remove embedded images.",
+        ),
+    ];
+    for (file, code, message, hint) in cases {
+        for command in [&["render"][..], &["check"], &[]] {
+            let args = [command, &[*file]].concat();
+            let (exit, out, err) = run_in(&dir, &args, b"");
+            assert_eq!((exit, out.as_str()), (1, ""), "{args:?}");
+            let (head, tail) = err.split_once('\n').unwrap();
+            assert_eq!(head, format!("✗ {file}: {message}"));
+            assert!(tail.starts_with(&format!("  {hint}")), "{tail}");
+            let (exit, out, err) = run_in(&dir, &[&args[..], &["--json"]].concat(), b"");
+            assert_eq!((exit, err.as_str()), (1, ""));
+            let v: Value = serde_json::from_str(&out).unwrap();
+            let e = if command == ["check"] {
+                &v["errors"][0]
+            } else {
+                &v["error"]
+            };
+            assert_eq!(
+                (e["code"].as_str(), e["message"].as_str()),
+                (Some(*code), Some(*message))
+            );
+            assert!(e["hint"].as_str().unwrap().starts_with(hint));
+            assert_eq!(
+                (&e["line"], &e["column"], &e["excerpt"]),
+                (&Value::Null, &Value::Null, &Value::Null)
+            );
+            assert_eq!((&v["input"], &v["format"]), (&json!(file), &Value::Null));
+        }
+    }
+}
+
+#[test]
+fn stdin_too_large_or_empty_says_stdin() {
+    let dir = folder("stdin-limits");
+    let (code, _, err) = run_in(&dir, &["-"], &vec![b'a'; (64 << 20) + 1]);
+    assert_eq!(code, 1);
+    assert!(
+        err.starts_with("✗ -: stdin is over 64 MiB; the limit is 64 MiB"),
+        "{err}"
+    );
+    let (code, out, _) = run_in(&dir, &["-", "--json"], b"");
+    assert_eq!(code, 1);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        (v["input"].as_str(), v["error"]["code"].as_str()),
+        (Some("-"), Some("empty_input"))
+    );
+}
+
+#[test]
+fn bad_utf8_points_at_the_same_place_whatever_the_line_ends_and_bom() {
+    let dir = folder("not-utf8");
+    let lf = b"graph TD\n  A --> B\n  B --> \xE9t\xE9\n".to_vec();
+    let crlf = [
+        b"\xEF\xBB\xBF",
+        &lf.iter()
+            .flat_map(|&b| {
+                if b == b'\n' {
+                    vec![b'\r', b'\n']
+                } else {
+                    vec![b]
+                }
+            })
+            .collect::<Vec<_>>()[..],
+    ]
+    .concat();
+    let cr: Vec<u8> = lf
+        .iter()
+        .map(|&b| if b == b'\n' { b'\r' } else { b })
+        .collect();
+    for (name, bytes) in [("lf.mmd", lf), ("crlf.mmd", crlf), ("cr.mmd", cr)] {
+        std::fs::write(dir.join(name), &bytes).unwrap();
+        let (code, _, err) = run_in(&dir, &[name], b"");
+        assert_eq!(code, 1);
+        assert_eq!(
+            err,
+            format!(
+                "✗ {name}:3:9: Line 3 isn't valid UTF-8 text.\n    3 |   B --> \u{FFFD}t\u{FFFD}\n      |         ^\n  Save the file as UTF-8.\n"
+            )
+        );
+        let (_, out, _) = run_in(&dir, &[name, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            v["error"],
+            json!({"code": "not_utf8", "message": "Line 3 isn't valid UTF-8 text.", "hint": "Save the file as UTF-8.", "line": 3, "column": 9, "excerpt": "  B --> \u{FFFD}t\u{FFFD}"})
+        );
+    }
+}
+
+#[test]
+fn an_unreadable_file_is_read_failed() {
+    let dir = folder("unreadable");
+    let path = dir.join("locked.mmd");
+    std::fs::write(&path, "graph TD\n").unwrap();
+    #[cfg(windows)]
+    let _lock = {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap()
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&path).is_ok() {
+            return; // root reads anything, so there is nothing to test.
+        }
+    }
+    let (code, _, err) = run_in(&dir, &["locked.mmd"], b"");
+    assert_eq!(code, 1);
+    assert!(
+        err.starts_with("✗ locked.mmd: Can't read locked.mmd: "),
+        "{err}"
+    );
+    assert!(
+        err.ends_with(".\n  Check that the file isn't locked and that you can open it.\n"),
+        "{err}"
+    );
+    assert!(!err.contains("os error"), "{err}");
 }
