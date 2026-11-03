@@ -8,6 +8,7 @@ mod error;
 mod input;
 mod mermaid;
 mod output;
+mod raster;
 mod svg;
 mod text;
 
@@ -454,10 +455,6 @@ fn run(command: Command, args: Args) -> u8 {
             return failed(command, &name, &known, &e, args.json);
         }
     };
-    if let Some((_, To::Png)) = target {
-        let e = Error::internal("PNG output isn't built in yet");
-        return failed(command, &name, &known, &e, args.json);
-    }
     let text = diagram.text.as_deref().unwrap_or_default();
     // The engine's folder for relative imports and images: the input's, else the current one.
     let dir = path
@@ -486,7 +483,21 @@ fn run(command: Command, args: Args) -> u8 {
             if removed > 0 {
                 warnings.push(Warning::unsafe_content_removed(removed));
             }
-            Ok((Some((target, svg)), vec![], warnings))
+            let image = match target.1 {
+                To::Svg => {
+                    let (width, height) = svg::size(&svg);
+                    (svg.into_bytes(), width, height, None)
+                }
+                To::Png => {
+                    let (width, height) = svg::css_size(&svg);
+                    let scale = args.scale.unwrap_or(2.0);
+                    let (scale, reduced) = raster::fit(width, height, scale)?;
+                    warnings.extend(reduced);
+                    let png = engine::png(format, &svg, scale, &mut warnings)?;
+                    (png.bytes, png.width, png.height, Some(scale))
+                }
+            };
+            Ok((Some((target, image)), vec![], warnings))
         }),
     };
     if args.debug {
@@ -504,11 +515,10 @@ fn run(command: Command, args: Args) -> u8 {
     known.warnings.extend(warnings);
     match made {
         None => checks(&name, &known, &errors, args.json),
-        Some(((target, to), svg)) => {
-            if let Err(e) = output::write(&target, svg.as_bytes()) {
+        Some(((target, to), (bytes, width, height, scale))) => {
+            if let Err(e) = output::write(&target, &bytes) {
                 return failed(command, &name, &known, &e, args.json);
             }
-            let (width, height) = svg::size(&svg);
             let output = match &target {
                 Target::Stdout => "-".to_string(),
                 Target::File(p) => p.to_string_lossy().into_owned(),
@@ -518,7 +528,8 @@ fn run(command: Command, args: Args) -> u8 {
                 output: &output,
                 width,
                 height,
-                bytes: svg.len(),
+                bytes: bytes.len(),
+                scale,
                 took: start.elapsed(),
                 page: args.page.as_deref(),
             };
@@ -536,7 +547,9 @@ fn renders(known: &Known, to: To, made: &Made, image_on_stdout: bool, json: bool
             "input": made.input, "format": format.id(), "diagram_type": known.diagram_type,
             "output": made.output, "to": to.ext(), "width": made.width, "height": made.height,
             // d2 can't list its boards, so a board has a name but no number.
-            "bytes": made.bytes, "scale": null,
+            // A whole scale reads as one: 2, not 2.0.
+            "bytes": made.bytes,
+            "scale": made.scale.map(|s| if s.fract() == 0.0 { json!(s as u64) } else { json!(s) }),
             "page": made.page.map(|name| json!({"index": null, "name": name})), "pages": [],
             "warnings": known.warnings.iter().map(Warning::json).collect::<Vec<_>>(),
             "engine": {"name": name, "version": version},

@@ -10,7 +10,9 @@ publish = false
 [dependencies]
 lexopt = "0.3.2"
 quick-xml = "0.42.0"
+resvg = { version = "0.49.0", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = true

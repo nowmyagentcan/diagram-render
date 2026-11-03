@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use crate::detect::Format;
 use crate::error::{Error, Warning};
 use crate::input::Lines;
+use crate::raster::{self, Png};
 use crate::{d2, dot, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
@@ -32,15 +33,20 @@ fn names(format: Format) -> Option<(&'static str, &'static str)> {
     }
 }
 
-/// The folder the engines live in, beside the executable a symlink (as install.sh makes) points
-/// to. Windows paths stay as given, without the verbatim prefix `canonicalize` adds there.
-fn folder() -> PathBuf {
+/// The install folder: the executable's, or that of the one a symlink (as install.sh makes)
+/// points to. Windows paths stay as given, without the verbatim prefix `canonicalize` adds there.
+pub fn home() -> PathBuf {
     let exe = env::current_exe().map(|p| match cfg!(windows) {
         true => p,
         false => p.canonicalize().unwrap_or(p),
     });
     let dir = exe.ok().and_then(|p| p.parent().map(Path::to_path_buf));
-    dir.unwrap_or_default().join("engines")
+    dir.unwrap_or_default()
+}
+
+/// The folder the engines live in.
+fn folder() -> PathBuf {
+    home().join("engines")
 }
 
 /// An engine executable and the `--debug` lines of its runs.
@@ -231,6 +237,20 @@ pub fn render(format: Format, engine: &mut Engine, task: &Task) -> Result<Render
         Format::Dot => dot::render(engine, task),
         Format::D2 => d2::render(engine, task),
         _ => Err(Error::internal("no renderer is built in yet")),
+    }
+}
+
+/// The PNG at `scale` of `svg`, which `render` made.
+pub fn png(
+    format: Format,
+    svg: &str,
+    scale: f64,
+    warnings: &mut Vec<Warning>,
+) -> Result<Png, Error> {
+    match format {
+        Format::Mermaid | Format::D2 => Err(Error::internal("PNG output isn't built in yet")),
+        // Graphviz measures a family it has no widths for as Times.
+        _ => raster::png(svg, scale, raster::SERIF, warnings),
     }
 }
 

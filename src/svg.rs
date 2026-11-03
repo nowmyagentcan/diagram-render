@@ -149,9 +149,17 @@ fn unsafe_css(style: &str) -> bool {
     css.contains("@import") || css.contains("javascript:")
 }
 
-/// The SVG's size in CSS px, rounded up: from the root's `width` and `height` (a `pt` is 4/3
-/// px), else from its `viewBox`.
+/// The SVG's size in CSS px, rounded up.
 pub fn size(svg: &str) -> (u32, u32) {
+    // Rounding up a value a float multiply left a hair above a whole number isn't wanted.
+    let up = |n: f64| (n - 1e-6).ceil().max(0.0) as u32;
+    let (width, height) = css_size(svg);
+    (up(width), up(height))
+}
+
+/// The SVG's size in CSS px: from the root's `width` and `height` (a `pt` is 4/3 px), else from
+/// its `viewBox`.
+pub fn css_size(svg: &str) -> (f64, f64) {
     let attrs = xml_root(svg).map(|(_, attrs)| attrs).unwrap_or_default();
     let attr = |key: &str| attrs.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
     let view: Vec<f64> = (attr("viewBox").unwrap_or_default())
@@ -163,9 +171,7 @@ pub fn size(svg: &str) -> (u32, u32) {
             Some(pt) => pt.parse::<f64>().ok().map(|n| n * 4.0 / 3.0),
             None => v.trim().trim_end_matches("px").parse().ok(),
         });
-        let length = length.or_else(|| view.get(i).copied()).unwrap_or(0.0);
-        // Rounding up a value a float multiply left a hair above a whole number isn't wanted.
-        (length - 1e-6).ceil().max(0.0) as u32
+        length.or_else(|| view.get(i).copied()).unwrap_or(0.0)
     };
     (side("width", 2), side("height", 3))
 }

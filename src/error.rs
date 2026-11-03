@@ -105,6 +105,36 @@ impl Warning {
         }
     }
 
+    pub fn scale_reduced(width: u32, height: u32, scale: f64) -> Self {
+        Self {
+            code: "scale_reduced",
+            message: format!(
+                "The PNG would be {width}×{height} px; drew it at scale {scale} to stay within 16384 px and 64 MP."
+            ),
+            line: None,
+        }
+    }
+
+    pub fn font_substituted(family: &str, substitute: &str) -> Self {
+        Self {
+            code: "font_substituted",
+            message: format!("Font {family} isn't available; drew its text with {substitute}."),
+            line: None,
+        }
+    }
+
+    /// `missing`: some of the characters, in the order met.
+    pub fn font_fallback(missing: &[char]) -> Self {
+        let sample: String = missing.iter().collect();
+        Self {
+            code: "font_fallback",
+            message: format!(
+                "Some characters aren't in the bundled fonts ({sample}); this computer's fonts drew them, so the PNG can differ between computers."
+            ),
+            line: None,
+        }
+    }
+
     pub fn json(&self) -> Value {
         let mut w = json!({"code": self.code, "message": self.message});
         if let Some(line) = self.line {
@@ -332,6 +362,15 @@ impl Error {
     }
 
     /// `code` is `exit code 2` or `killed by a signal`; `first` the first line it printed.
+    /// The bundled fonts are part of the install, like the engines.
+    pub fn fonts_missing(path: &str) -> Self {
+        Self::new(
+            "engine_missing",
+            format!("The fonts PNGs are drawn with are missing: {path} doesn't exist."),
+            "Reinstall diagram-render.",
+        )
+    }
+
     pub fn engine_failed(engine: &str, code: &str, first: Option<&str>) -> Self {
         let said = first
             .map(|l| format!(": {}", clause(l)))
@@ -386,6 +425,14 @@ impl Error {
             "page_not_found",
             format!("D2 found no board {page}."),
             "Pass --page with a board's path, such as layers.deploy, or leave it out for the root board.",
+        )
+    }
+
+    pub fn image_too_large(width: u32, height: u32) -> Self {
+        Self::new(
+            "image_too_large",
+            format!("The diagram is {width}×{height} px; a PNG would need a scale below 0.05."),
+            "Render SVG instead.",
         )
     }
 

@@ -169,6 +169,8 @@ pub struct Made<'a> {
     pub width: u32,
     pub height: u32,
     pub bytes: usize,
+    /// PNG pixels per CSS pixel; `None` for SVG.
+    pub scale: Option<f64>,
     pub took: Duration,
     pub page: Option<&'a str>,
 }
