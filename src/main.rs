@@ -7,6 +7,7 @@ mod dot;
 mod drawio;
 mod engine;
 mod error;
+mod excalidraw;
 mod input;
 mod mermaid;
 mod output;

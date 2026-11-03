@@ -14,7 +14,7 @@ use crate::error::{Error, Warning};
 use crate::input::Lines;
 use crate::output::To;
 use crate::raster::{self, Png};
-use crate::{bpmn, d2, dot, drawio, mermaid};
+use crate::{bpmn, d2, dot, drawio, excalidraw, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -262,6 +262,7 @@ pub fn render(format: Format, engine: Option<&mut Engine>, task: &Task) -> Resul
         (Format::D2, Some(engine)) => d2::render(engine, task),
         (Format::Bpmn, _) => bpmn::render(task),
         (Format::Drawio, _) => drawio::render(task),
+        (Format::Excalidraw, _) => excalidraw::render(task),
         _ => Err(Error::internal("no renderer is built in yet")),
     }
 }
@@ -294,6 +295,7 @@ pub fn check(format: Format, engine: Option<&mut Engine>, task: &Task) -> Result
         (Format::D2, Some(engine)) => d2::check(engine, task),
         (Format::Bpmn, _) => bpmn::check(task),
         (Format::Drawio, _) => drawio::check(task),
+        (Format::Excalidraw, _) => excalidraw::check(task),
         _ => Err(Error::internal("no checker is built in yet")),
     }
 }

@@ -529,6 +529,23 @@ impl Error {
         )
     }
 
+    pub fn invalid_scene(reason: &str) -> Self {
+        Self::new(
+            "invalid_scene",
+            format!("This isn't an Excalidraw scene: {reason}."),
+            "Open it in Excalidraw and save it again.",
+        )
+    }
+
+    /// A scene whose embedded images add up to more than the limit.
+    pub fn too_much_image_data(path: &str, size: &str) -> Self {
+        Self::new(
+            "too_large",
+            format!("{path} holds {size} of image data; the limit is 64 MiB."),
+            "Split the diagram, or remove embedded images.",
+        )
+    }
+
     pub fn no_diagram_layout() -> Self {
         Self::new(
             "no_diagram_layout",
