@@ -215,39 +215,30 @@ fn select(
     found: &Mutex<Found>,
 ) -> Option<ID> {
     let mut gone = None;
+    let mut bundled = None;
     for family in font.families() {
-        let bundled = match family {
-            FontFamily::Serif => SERIF,
-            FontFamily::Monospace => MONO,
-            FontFamily::SansSerif | FontFamily::Cursive | FontFamily::Fantasy => SANS,
-            FontFamily::Named(name) => match stand_in(name) {
-                Some(bundled) => bundled,
-                None => {
-                    system(db, &mut found.lock().unwrap());
-                    if let Some(id) = query(db, name, font) {
-                        return Some(id);
-                    }
-                    gone = gone.or(Some(name));
-                    continue;
-                }
-            },
+        bundled = match family {
+            FontFamily::Serif => Some(SERIF),
+            FontFamily::Monospace => Some(MONO),
+            FontFamily::SansSerif | FontFamily::Cursive | FontFamily::Fantasy => Some(SANS),
+            FontFamily::Named(name) => stand_in(name),
         };
-        if let Some(name) = gone {
-            let mut f = found.lock().unwrap();
-            if !f.substituted.iter().any(|(n, _)| n == name) {
-                f.substituted.push((name.clone(), bundled));
+        if let (None, FontFamily::Named(name)) = (bundled, family) {
+            system(db, &mut found.lock().unwrap());
+            if let Some(id) = query(db, name, font) {
+                return Some(id);
             }
+            gone = gone.or(Some(name));
+        } else {
+            break;
         }
-        return query(db, bundled, font);
     }
-    if let Some(name) = gone {
-        found
-            .lock()
-            .unwrap()
-            .substituted
-            .push((name.clone(), substitute));
+    let bundled = bundled.unwrap_or(substitute);
+    let mut f = found.lock().unwrap();
+    if let Some(name) = gone.filter(|n| !f.substituted.iter().any(|(s, _)| s == *n)) {
+        f.substituted.push((name.clone(), bundled));
     }
-    query(db, substitute, font)
+    query(db, bundled, font)
 }
 
 /// Loads the computer's fonts the first time a family or character needs them.

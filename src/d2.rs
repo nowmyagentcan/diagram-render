@@ -34,8 +34,8 @@ pub fn png(engine: &mut Engine, task: &Task, svg: &str, scale: f64) -> Result<Pn
     let said = run(engine, task, Some(task.name), Some(scale))?;
     let rendered = said.map_err(|errors| errors.into_iter().next().unwrap())?;
     // d2 writes RGB with an Exif chunk; encoded again it is RGBA with nothing else.
-    let failed = |why| Error::engine_failed("D2", "exit code 0", Some(why));
-    let pixmap = Pixmap::decode_png(&rendered.svg).map_err(|_| failed("its PNG can't be read"))?;
+    let pixmap = Pixmap::decode_png(&rendered.svg)
+        .map_err(|_| Error::engine_failed("D2", "exit code 0", Some("its PNG can't be read")))?;
     let bytes = pixmap.encode_png();
     Ok(Png {
         bytes: bytes.map_err(|e| Error::internal(&format!("PNG encoding: {e}")))?,
