@@ -137,12 +137,9 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
         d.text(&text, Frame::Straight(b.x, b.y), b.w, b.h, &style);
     }
     if !d.approximated.is_empty() {
-        let mut types: Vec<&str> = vec![];
-        for t in &d.approximated {
-            if !types.contains(&t.as_str()) {
-                types.push(t);
-            }
-        }
+        let mut types: Vec<&str> = d.approximated.iter().map(String::as_str).collect();
+        types.sort_unstable();
+        types.dedup();
         warnings.push(Warning::element_approximated(d.approximated.len(), &types));
     }
     let page = Page {
@@ -187,6 +184,7 @@ struct Drawing {
 
 impl Drawing {
     fn item(&mut self, model: &HashMap<&str, Node>, el: Node, di: Node, place: &Place) {
+        self.svg.body.push('\n');
         let attr = |ns: &str, key: &str| di.attribute((ns, key)).map(escape);
         let fill = attr(COLOR, "background-color").or_else(|| attr(BIOC, "fill"));
         let stroke = attr(COLOR, "border-color").or_else(|| attr(BIOC, "stroke"));
@@ -218,15 +216,13 @@ impl Drawing {
                     let line = format!("M{}", path(points));
                     shapes::path(&mut self.svg.body, &line, "none", p.stroke, 2.0, "");
                 }
-                self.svg.body.push('\n');
                 if matches!(kind, "sequenceFlow" | "messageFlow") {
                     self.external(name, label, flow_middle(points), color);
                 }
             }
             Place::Shape(b) => {
                 let b = *b;
-                self.svg.include(b.x, b.y);
-                self.svg.include(b.x + b.w, b.y + b.h);
+                self.svg.include_box(b);
                 match kind {
                     "participant" | "lane" => {
                         let across = di.attribute("isHorizontal") != Some("false");
@@ -234,7 +230,6 @@ impl Drawing {
                             || el.attribute("processRef").is_some()
                                 && di.attribute("isExpanded") != Some("false");
                         shapes::swimlane(&mut self.svg.body, el, b, &p, expanded, across);
-                        self.svg.body.push('\n');
                         let header = Style {
                             pad: 0.0,
                             ..inner(12.0)
@@ -252,7 +247,6 @@ impl Drawing {
                     }
                     "textAnnotation" => {
                         shapes::annotation(&mut self.svg.body, b, &p);
-                        self.svg.body.push('\n');
                         let text = el.children().find(|c| c.tag_name().name() == "text");
                         let style = Style {
                             align: Align::TopLeft,
@@ -263,14 +257,12 @@ impl Drawing {
                     }
                     "group" => {
                         shapes::group(&mut self.svg.body, b, &p);
-                        self.svg.body.push('\n');
                         let value = (el.attribute("categoryValueRef"))
                             .and_then(|r| model.get(r)?.attribute("value"));
                         let top = (b.x + b.w / 2.0, b.y + 10.0);
                         self.external(value.unwrap_or_default(), label, top, color);
                     }
                     _ if shapes::flow_node(&mut self.svg.body, model, el, di, b, &p) => {
-                        self.svg.body.push('\n');
                         if shapes::is_activity(kind) {
                             let expanded = di.attribute("isExpanded") == Some("true")
                                 && kind != "callActivity";
@@ -287,7 +279,6 @@ impl Drawing {
                     _ => {
                         self.approximated.push(kind.into());
                         shapes::rect(&mut self.svg.body, b, 10.0, p.fill, p.stroke, 2.0, "");
-                        self.svg.body.push('\n');
                         let style = inner(12.0);
                         self.text(name, Frame::Straight(b.x, b.y), b.w, b.h, &style);
                     }
@@ -322,8 +313,7 @@ impl Drawing {
                 }
             }
         };
-        self.svg.include(b.x, b.y);
-        self.svg.include(b.x + b.w, b.y + b.h);
+        self.svg.include_box(b);
         self.labels.push((text.into(), b, color));
     }
 
@@ -559,6 +549,11 @@ impl Svg {
     fn include(&mut self, x: f64, y: f64) {
         let ((x0, y0), (x1, y1)) = self.extent.unwrap_or(((x, y), (x, y)));
         self.extent = Some(((x0.min(x), y0.min(y)), (x1.max(x), y1.max(y))));
+    }
+
+    fn include_box(&mut self, b: Rect) {
+        self.include(b.x, b.y);
+        self.include(b.x + b.w, b.y + b.h);
     }
 
     /// The whole SVG, framed as bpmn-js frames its export: everything drawn plus 5 px.
