@@ -1,0 +1,15 @@
+# The engines every archive ships, pinned by SHA-256. Columns: engine version target sha256 url.
+# "all" rows are sources built for every target; "linux" rows serve linux-x64 and linux-arm64, where
+# merman is built from its crate (static musl) and its release archive gives only the licence files.
+merman 0.9.3 windows-x64 05e97bf7f179292479fb01463f4c8e0f6dff8fb3c5910bee5ec4a5ed34e9d547 https://github.com/Latias94/merman/releases/download/v0.9.3/merman-cli-x86_64-pc-windows-msvc.zip
+merman 0.9.3 macos-arm64 387665c30cb416e0cbaa659e9a7be73cc6694f3b797807a234efeb3b7b935732 https://github.com/Latias94/merman/releases/download/v0.9.3/merman-cli-aarch64-apple-darwin.tar.xz
+merman 0.9.3 macos-x64 4ba4597d0f466b60654f78ea986c343677aa04cec944374b04842b687bac3115 https://github.com/Latias94/merman/releases/download/v0.9.3/merman-cli-x86_64-apple-darwin.tar.xz
+merman-notices 0.9.3 linux e93dbf741319190d53107c4277b373d357dcdad3f4f7e50f114a51c9b682109b https://github.com/Latias94/merman/releases/download/v0.9.3/merman-cli-x86_64-unknown-linux-gnu.tar.xz
+merman-crate 0.9.3 linux f0465145afcff00cc6f92690ec648d4a07b1b7e03f9647e9bfd1ceba73687b84 https://static.crates.io/crates/merman-cli/merman-cli-0.9.3.crate
+d2 0.9.0 windows-x64 5f63b643de8f5a6dfb922d172e1b5496e4caf47497c33c4427cf1127f28c340f https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-windows-amd64.tar.gz
+d2 0.9.0 macos-arm64 eaf6c0c143e56dd9fa97bfb6df25ea9c1ebce40245f056a0768cf1a6c15d3064 https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-macos-arm64.tar.gz
+d2 0.9.0 macos-x64 cad39576a480d6bb02ea142fef1726647914b0d2da51ccc9b30b660a2b1babf0 https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-macos-amd64.tar.gz
+d2 0.9.0 linux-x64 5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9 https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-linux-amd64.tar.gz
+d2 0.9.0 linux-arm64 ac2c028697199479acb321db1e3d68caee9f2ba492ed73caa3cd13f3829bf913 https://github.com/d2lang/d2/releases/download/v0.9.0/d2-v0.9.0-linux-arm64.tar.gz
+graphviz 16.1.0 all 0f661718f3e5268dc3bad0fb53ab646605d26db70f4080799aff1dc2f61783c3 https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.xz
+expat 2.10.0 all c624ba2998fc65df1163a49641ff3f9ab73138b11641d92c86bee0fb01b1bc7f https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.xz
