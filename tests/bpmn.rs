@@ -400,3 +400,94 @@ fn unknown_elements_are_drawn_as_named_boxes() {
     let svg = fs::read_to_string(dir.join("u.svg")).unwrap();
     assert!(svg.contains(">Widget</tspan>"), "{svg}");
 }
+
+/// Grey levels (0–255) of an image drawn on white.
+fn grey(png: &[u8]) -> (usize, usize, Vec<f64>) {
+    let pixmap = resvg::tiny_skia::Pixmap::decode_png(png).unwrap();
+    let levels = (pixmap.pixels().iter())
+        .map(|p| {
+            // Premultiplied, so white shows through what is left of the alpha.
+            let white = f64::from(255 - p.alpha());
+            let (r, g, b) = (p.red(), p.green(), p.blue());
+            0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b) + white
+        })
+        .collect();
+    (pixmap.width() as usize, pixmap.height() as usize, levels)
+}
+
+/// `image` (`w` wide) blurred with a Gaussian of σ = 2 px, edges held at their last pixel; it
+/// comes out turned a quarter, which leaves differences between images as they were.
+fn blurred(w: usize, h: usize, image: &[f64]) -> Vec<f64> {
+    let rows = blur_rows(w, image);
+    let turned: Vec<f64> = (0..w * h).map(|i| rows[(i % h) * w + i / h]).collect();
+    blur_rows(h, &turned)
+}
+
+fn blur_rows(w: usize, image: &[f64]) -> Vec<f64> {
+    let kernel: Vec<f64> = (-6..=6_i32)
+        .map(|i| (-f64::from(i * i) / 8.0).exp())
+        .collect();
+    let total: f64 = kernel.iter().sum();
+    let at = |row: &[f64], i: usize, k: usize| row[(i + k).saturating_sub(6).min(w - 1)];
+    (image.chunks(w))
+        .flat_map(|row| {
+            (0..w).map(|i| {
+                let sum: f64 = kernel
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| v * at(row, i, k))
+                    .sum();
+                sum / total
+            })
+        })
+        .collect()
+}
+
+/// The text of each `<text>` in an SVG, its lines joined by spaces.
+fn texts(svg: &str) -> Vec<String> {
+    let doc = roxmltree::Document::parse(svg).unwrap();
+    (doc.descendants().filter(|n| n.has_tag_name("text")))
+        .map(|t| {
+            let lines: Vec<&str> = (t.children().filter_map(|s| s.text())).collect();
+            lines
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+#[test]
+fn renders_match_bpmn_js_within_three_percent() {
+    // References: bpmn-js 18.31.1 `saveSVG` drawn at scale 1 on white in Chromium, as grey.
+    let labels: Value =
+        serde_json::from_str(&fs::read_to_string(fixture("refs/labels.json")).unwrap()).unwrap();
+    let dir = folder("bpmn-references");
+    for (name, want) in labels.as_object().unwrap() {
+        let (file, page) = match name.split_once("-") {
+            Some(("pages", n)) => ("pages.bpmn".to_string(), vec!["--page", n]),
+            _ => (format!("{name}.bpmn"), vec![]),
+        };
+        let source = fs::read(fixture(&file)).unwrap();
+        let args = [&["-o", "out.svg"], &page[..]].concat();
+        assert_eq!(in_dir(&dir, &file, &source, &args).0, 0, "{name}");
+        let ours = texts(&fs::read_to_string(dir.join("out.svg")).unwrap());
+        for label in want.as_array().unwrap() {
+            assert!(
+                ours.contains(&label.as_str().unwrap().to_string()),
+                "{name}: {label}"
+            );
+        }
+        let args = [&["-o", "out.png", "--scale", "1"], &page[..]].concat();
+        assert_eq!(in_dir(&dir, &file, &source, &args).0, 0, "{name}");
+        let (w, h, ours) = grey(&fs::read(dir.join("out.png")).unwrap());
+        let reference = fs::read(fixture(&format!("refs/{name}.png"))).unwrap();
+        let (rw, rh, reference) = grey(&reference);
+        assert_eq!((w, h), (rw, rh), "{name}: framed as bpmn-js frames it");
+        let (a, b) = (blurred(w, h, &ours), blurred(w, h, &reference));
+        let difference =
+            a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum::<f64>() / a.len() as f64 / 255.0;
+        assert!(difference <= 0.03, "{name}: {:.2} %", difference * 100.0);
+    }
+}
