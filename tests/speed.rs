@@ -134,3 +134,55 @@ fn bpmn_renders_within_its_targets() {
     check("small.bpmn", 60, 300);
     check("large.bpmn", 500, 2000);
 }
+
+/// `large.drawio`: 500 labelled vertices in a 25 × 20 grid and 600 orthogonal edges between
+/// neighbours, one page.
+fn large_drawio() -> String {
+    let mut cells = String::new();
+    for i in 0..500 {
+        let (x, y) = (40 + (i % 25) * 160, 40 + (i / 25) * 120);
+        let _ = write!(
+            cells,
+            r#"<mxCell id="v{i}" value="Step {i}" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="{x}" y="{y}" width="100" height="50" as="geometry"/></mxCell>"#
+        );
+    }
+    let pairs = (0..500)
+        .filter(|i| i % 25 != 24)
+        .map(|i| (i, i + 1))
+        .chain((0..475).map(|i| (i, i + 25)))
+        .take(600);
+    for (k, (a, b)) in pairs.enumerate() {
+        let _ = write!(
+            cells,
+            r#"<mxCell id="e{k}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="v{a}" target="v{b}"><mxGeometry relative="1" as="geometry"/></mxCell>"#
+        );
+    }
+    format!(
+        r#"<mxfile><diagram name="Large"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>{cells}</root></mxGraphModel></diagram></mxfile>"#
+    )
+}
+
+#[test]
+#[ignore = "timing: run on a release build"]
+fn drawio_renders_within_its_targets() {
+    let dir = folder("speed-drawio");
+    fs::copy(
+        "tests/fixtures/drawio/pages.drawio",
+        dir.join("small.drawio"),
+    )
+    .unwrap();
+    fs::write(dir.join("large.drawio"), large_drawio()).unwrap();
+    for (file, svg_target, png_extra) in [("small.drawio", 60, 300), ("large.drawio", 1000, 2000)] {
+        let svg = median(&dir, &[file, "-o", "out.svg"]);
+        let png = median(&dir, &[file, "-o", "out.png"]);
+        println!("{file}: SVG {svg:.0?}, PNG at scale 2 {png:.0?}");
+        assert!(
+            svg <= Duration::from_millis(svg_target),
+            "{file} SVG {svg:?}"
+        );
+        assert!(
+            png <= svg + Duration::from_millis(png_extra),
+            "{file} PNG {png:?}"
+        );
+    }
+}
