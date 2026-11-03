@@ -183,6 +183,22 @@ impl Warning {
         }
     }
 
+    pub fn remote_image_not_fetched(url: &str) -> Self {
+        let cut: String = url.chars().take(80).collect();
+        let cut = if cut.len() < url.len() {
+            cut + "…"
+        } else {
+            cut
+        };
+        Self {
+            code: "remote_image_not_fetched",
+            message: format!(
+                "Image {cut} isn't fetched (the tool works offline); drew a placeholder."
+            ),
+            line: None,
+        }
+    }
+
     /// `element_skipped` or `edge_skipped`: `kind` is what the item is, such as `edge`.
     pub fn skipped(code: &'static str, kind: &str, id: &str, reason: &str, line: usize) -> Self {
         Self {

@@ -360,3 +360,119 @@ fn the_page_background_fills_the_drawing_unless_another_is_asked_for() {
         "{v}"
     );
 }
+
+/// The fixtures that show every shape, style and container.
+const FIXTURES: [&str; 4] = ["shapes", "styles", "containers", "images"];
+
+#[test]
+fn every_fixture_renders_to_svg_and_png_at_the_svg_size() {
+    let dir = folder("drawio-fixtures");
+    for name in FIXTURES {
+        let file = format!("{name}.drawio");
+        let source = fs::read(fixture(&file)).unwrap();
+        let (code, svg) = in_dir(&dir, &file, &source, &[]);
+        let quiet = if name == "images" {
+            vec!["remote_image_not_fetched"]
+        } else {
+            vec![]
+        };
+        assert_eq!((code, codes(&svg)), (0, vec![]), "{name}: {svg}");
+        for scale in [1.0, 2.0] {
+            let s = scale.to_string();
+            let (code, png) = in_dir(&dir, &file, &source, &["--to", "png", "--scale", &s]);
+            assert_eq!((code, codes(&png)), (0, quiet.clone()), "{name}: {png}");
+            for k in ["width", "height"] {
+                let want = svg[k].as_f64().unwrap() * scale;
+                assert!(
+                    (png[k].as_f64().unwrap() - want).abs() <= 1.0,
+                    "{name} {k}: {png}"
+                );
+            }
+        }
+    }
+}
+
+/// The `fixture` rendered to SVG with `args`.
+fn svg_of(file: &str, args: &[&str]) -> String {
+    let dir = folder(&format!("drawio-svg-{}", file.replace('.', "-")));
+    let source = fs::read(fixture(file)).unwrap();
+    let (code, v) = in_dir(&dir, file, &source, &[&["-o", "out.svg"], args].concat());
+    assert_eq!(code, 0, "{v}");
+    fs::read_to_string(dir.join("out.svg")).unwrap()
+}
+
+#[test]
+fn styles_fill_stroke_turn_and_shade_shapes() {
+    let svg = svg_of("styles.drawio", &[]);
+    for want in [
+        r##"fill="#dae8fc" stroke="#6c8ebf""##,
+        r##"<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#dae8fc"/><stop offset="100%" stop-color="#7ea6e0"/>"##,
+        r#"x1="0" y1="0" x2="1" y2="0""#,
+        r#"stroke-width="2" stroke-dasharray="6 6""#,
+        r#"stroke-dasharray="1 4""#,
+        r#"filter="url(#shadow)""#,
+        r#"<g opacity="0.4">"#,
+        r##"fill-opacity="0.3" stroke="#9673a6" stroke-opacity="0.6""##,
+        r#"transform="rotate(30 "#,
+        r#"scale(-1 1)"#,
+        r#"rx="12""#,
+        r##"fill="#ffe6cc""##,
+        r#"<a xlink:href="https://example.org/">"#,
+    ] {
+        assert!(svg.contains(want), "{want}: {svg}");
+    }
+}
+
+#[test]
+fn tables_draw_lines_between_rows_and_cells() {
+    let svg = svg_of("containers.drawio", &[]);
+    assert!(
+        svg.contains(r##"<path d="M300 260 L540 260 M380 220 L380 300 M460 220 L460 300" fill="none" stroke="#000000"/>"##),
+        "{svg}"
+    );
+    // A swimlane down the side has its header on the left and its body filled.
+    assert!(
+        svg.contains(r#"<path d="M330 20 L300 20 L300 180 L330 180 Z""#),
+        "{svg}"
+    );
+    assert!(
+        svg.contains(r##"fill="#f5f5f5" stroke="#000000""##),
+        "{svg}"
+    );
+}
+
+#[test]
+fn vendor_shapes_and_stencils_are_drawn_as_dashed_boxes() {
+    let dir = folder("drawio-vendor");
+    let source = fs::read(fixture("vendor.drawio")).unwrap();
+    let (code, v) = in_dir(&dir, "vendor.drawio", &source, &[]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        v["warnings"],
+        json!([{"code": "shape_approximated", "message": "Drew 3 shapes as plain boxes: mxgraph.aws4.resourceIcon, mxgraph.aws4.bucket, stencil."}])
+    );
+    let svg = fs::read_to_string(dir.join("vendor.svg")).unwrap();
+    assert_eq!(svg.matches(r#"stroke-dasharray="4 4""#).count(), 3, "{svg}");
+}
+
+#[test]
+fn remote_images_are_links_in_svg_and_placeholders_in_png() {
+    let svg = svg_of("images.drawio", &[]);
+    assert!(
+        svg.contains(r#"xlink:href="https://example.org/logo.png""#),
+        "{svg}"
+    );
+    // draw.io leaves `;base64` out of data URLs in styles.
+    assert!(
+        svg.contains(r#"xlink:href="data:image/png;base64,iVBOR"#),
+        "{svg}"
+    );
+    let dir = folder("drawio-remote");
+    let source = fs::read(fixture("images.drawio")).unwrap();
+    let (code, v) = in_dir(&dir, "images.drawio", &source, &["--to", "png"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        v["warnings"],
+        json!([{"code": "remote_image_not_fetched", "message": "Image https://example.org/logo.png isn't fetched (the tool works offline); drew a placeholder."}])
+    );
+}

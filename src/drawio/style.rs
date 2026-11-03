@@ -150,6 +150,16 @@ impl Style {
         self.get(key).and_then(lead_number).unwrap_or(default)
     }
 
+    /// Whether a flag is 1.
+    pub fn on(&self, key: &str) -> bool {
+        self.num(key, 0.0) == 1.0
+    }
+
+    /// Whether a flag is unset or anything but 0.
+    pub fn not_off(&self, key: &str) -> bool {
+        self.get(key).is_none_or(|v| lead_number(v) != Some(0.0))
+    }
+
     pub fn set(&mut self, key: &str, value: &str) {
         self.0.insert(key.into(), value.into());
     }
@@ -201,5 +211,6 @@ mod tests {
         assert_eq!(s.num("b", 0.0), 0.5);
         assert_eq!(s.num("c", 0.0), -300.0);
         assert_eq!(s.num("d", 7.0), 7.0);
+        assert!(s.on("e") && !s.on("d") && s.not_off("d") && s.not_off("zz"));
     }
 }

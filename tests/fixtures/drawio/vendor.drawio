@@ -1,0 +1,5 @@
+<mxfile host="Electron" version="26.0.0">
+  <diagram id="d1" name="Page-1">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10"><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="v1" value="Lambda" style="sketch=0;outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1"><mxGeometry x="20" y="20" width="78" height="78" as="geometry"/></mxCell><mxCell id="v2" value="Bucket" style="shape=mxgraph.aws4.bucket;html=1;" vertex="1" parent="1"><mxGeometry x="140" y="20" width="78" height="78" as="geometry"/></mxCell><mxCell id="v3" value="Drawn" style="shape=stencil(tZRNbsIwEIVPky0yMRVrlNJdl1yARENsYXvlTF1OC6c5BJ0v3Aen8xfkh8hXYfQTvZi/8a3nfe/fj8Pre7fzr9/93///O/DGMcZRA0AjdTvd8+eNdmmgfZ0SZmgcL0LnxpbmGtB8X9CjKCaJKwJBa+lCnSz38aWFtiAWoi8/7yyn4oUTpN2QZ6/W2QuSRtwYw1tFl8yRrLdsAg==);html=1;" vertex="1" parent="1"><mxGeometry x="260" y="20" width="78" height="78" as="geometry"/></mxCell></root></mxGraphModel>
+  </diagram>
+</mxfile>

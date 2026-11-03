@@ -76,6 +76,8 @@ pub struct Cell<'a> {
     pub visible: bool,
     pub collapsed: bool,
     pub geo: Geo,
+    /// The link its object carries.
+    pub link: Option<&'a str>,
     pub line: usize,
 }
 
@@ -115,6 +117,7 @@ pub fn cells<'a>(model: Node<'a, '_>, line: &dyn Fn(Node) -> usize) -> Vec<Cell<
                 geo: (cell.children().find(|c| c.has_tag_name("mxGeometry")))
                     .map(geometry)
                     .unwrap_or_default(),
+                link: object.and_then(|o| o.attribute("link")),
                 line: line(n),
             })
         })

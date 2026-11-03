@@ -1,0 +1,5 @@
+<mxfile host="Electron" version="26.0.0">
+  <diagram id="d1" name="Page-1">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10"><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="i1" value="Local" style="shape=image;html=1;verticalAlign=top;verticalLabelPosition=bottom;imageAspect=0;image=data:image/png,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAKUlEQVR42mP4f4bhPzI2TpuJggnJMwwDA0jVgC4/HAwYTQej6eAMw38AySJ9n8tuePYAAAAASUVORK5CYII=;" vertex="1" parent="1"><mxGeometry x="20" y="20" width="64" height="64" as="geometry"/></mxCell><mxCell id="i2" value="Remote" style="shape=image;html=1;verticalAlign=top;verticalLabelPosition=bottom;imageAspect=0;image=https://example.org/logo.png;" vertex="1" parent="1"><mxGeometry x="140" y="20" width="64" height="64" as="geometry"/></mxCell></root></mxGraphModel>
+  </diagram>
+</mxfile>

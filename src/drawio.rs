@@ -14,9 +14,11 @@ use roxmltree::Node;
 use crate::engine::{Checked, Page, Rendered, Task};
 use crate::error::{Error, Warning};
 use crate::input::Lines;
+use crate::output::To;
 use crate::raster::Widths;
 use crate::svg::{escape, num as n};
 use read::{Cell, Content, P};
+use shapes::{Context, Defs, Note};
 use style::Style;
 
 /// The most cells one page may have.
@@ -146,14 +148,19 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
         extent: None,
         widths: Widths::load()?,
         warnings,
-        approximated: vec![],
+        approximated: (0, vec![]),
+        remote: vec![],
+        defs: Defs::default(),
+        png: task.to == To::Png,
         removed: 0,
     };
     d.draw(&cells);
-    if !d.approximated.is_empty() {
-        let names: Vec<&str> = d.approximated.iter().take(5).map(String::as_str).collect();
-        let count = d.approximated.len();
-        d.warnings.push(Warning::shape_approximated(count, &names));
+    if let (count @ 1.., names) = &d.approximated {
+        let names: Vec<&str> = names.iter().take(5).map(String::as_str).collect();
+        d.warnings.push(Warning::shape_approximated(*count, &names));
+    }
+    for url in std::mem::take(&mut d.remote) {
+        d.warnings.push(Warning::remote_image_not_fetched(&url));
     }
     let page = Page {
         index: Some(at + 1),
@@ -192,6 +199,42 @@ fn find(diagrams: &[Node], pages: &[Page], wanted: &str) -> Option<usize> {
     diagrams.iter().zip(pages).position(named)
 }
 
+/// The lines a table draws between its rows, and between the cells of its first row.
+fn table_lines(
+    table: &State,
+    rows: &[usize],
+    cells: &[Cell],
+    states: &[Option<State>],
+) -> Vec<(P, P)> {
+    let t = table.rect;
+    let rows: Vec<(usize, &State)> = (rows.iter())
+        .filter_map(|&i| Some((i, states[i].as_ref()?)))
+        .filter(|(i, _)| cells[*i].visible)
+        .collect();
+    let mut lines = vec![];
+    if table.style.not_off("rowLines") {
+        for (_, row) in rows.iter().skip(1) {
+            lines.push(((t.x, row.rect.y), (t.x + t.w, row.rect.y)));
+        }
+    }
+    if table.style.not_off("columnLines")
+        && let Some((first, row)) = rows.first()
+    {
+        let top = row.rect.y;
+        let ids = read::by_id(cells);
+        let mut columns: Vec<f64> = (cells.iter().enumerate())
+            .filter(|(_, c)| c.parent.and_then(|p| ids.get(p)) == Some(first))
+            .filter_map(|(i, _)| states[i].as_ref().map(|s| s.rect.x))
+            .filter(|&x| x > t.x + 0.5)
+            .collect();
+        columns.sort_by(f64::total_cmp);
+        for x in columns {
+            lines.push(((x, top), (x, t.y + t.h)));
+        }
+    }
+    lines
+}
+
 /// A colour as SVG reads it: draw.io's `default` colours are its light theme's.
 pub fn color(value: &str) -> String {
     let v = value.trim();
@@ -208,8 +251,13 @@ struct Drawing {
     extent: Option<(P, P)>,
     widths: Widths,
     warnings: Vec<Warning>,
-    /// The shapes drawn as plain boxes, each once.
-    approximated: Vec<String>,
+    /// How many shapes were drawn as plain boxes, and their names, each once.
+    approximated: (usize, Vec<String>),
+    /// Remote images left out of a PNG, each once.
+    remote: Vec<String>,
+    defs: Defs,
+    /// Whether the SVG becomes a PNG.
+    png: bool,
     /// Unsafe items left out of labels.
     removed: usize,
 }
@@ -316,6 +364,10 @@ impl Drawing {
                 self.vertex(c, &State { rect, style });
             } else if let Some(state) = &states[i] {
                 self.vertex(c, state);
+                if state.style.get("shape") == Some("table") {
+                    let lines = table_lines(state, &children[i], cells, &states);
+                    shapes::table_lines(&mut self.body, &state.style, &lines);
+                }
             }
         }
     }
@@ -431,13 +483,37 @@ impl Drawing {
 
     fn vertex(&mut self, c: &Cell, state: &State) {
         let mut out = String::new();
-        if let Some(name) = shapes::draw(&mut out, state)
-            && !self.approximated.contains(&name)
-        {
-            self.approximated.push(name);
+        let mut cx = Context {
+            defs: &mut self.defs,
+            png: self.png,
+        };
+        let linked;
+        let state = match c.link {
+            Some(link) => {
+                let mut style = state.style.clone();
+                style.set("link", link);
+                linked = State {
+                    rect: state.rect,
+                    style,
+                };
+                &linked
+            }
+            None => state,
+        };
+        match shapes::draw(&mut out, state, &mut cx) {
+            Some(Note::Approximated(name)) => {
+                self.approximated.0 += 1;
+                if !self.approximated.1.contains(&name) {
+                    self.approximated.1.push(name);
+                }
+            }
+            Some(Note::Remote(url)) if self.png && !self.remote.contains(&url) => {
+                self.remote.push(url);
+            }
+            _ => {}
         }
         if !out.is_empty() {
-            self.include_rect(state.rect);
+            self.include_rect(shapes::extent(state));
         }
         self.body += &out;
         if !c.label.trim().is_empty() {
@@ -463,6 +539,15 @@ impl Drawing {
         let mut svg = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{w}\" height=\"{h}\" viewBox=\"{x} {y} {w} {h}\" version=\"1.1\">\n"
         );
+        if !self.defs.svg.is_empty() {
+            let _ = write!(
+                svg,
+                "<defs>
+{}</defs>
+",
+                self.defs.svg
+            );
+        }
         match background.unwrap_or("white") {
             "transparent" => {}
             fill => {
