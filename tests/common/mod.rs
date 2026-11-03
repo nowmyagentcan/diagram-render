@@ -98,3 +98,55 @@ pub fn run_at(bin: &Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) 
     cmd.args(args).env_remove("NO_COLOR");
     feed(cmd, bin.parent().unwrap(), stdin)
 }
+
+/// Grey levels (0–255) of an image drawn on white.
+pub fn grey(png: &[u8]) -> (usize, usize, Vec<f64>) {
+    let pixmap = resvg::tiny_skia::Pixmap::decode_png(png).unwrap();
+    let levels = (pixmap.pixels().iter())
+        .map(|p| {
+            // Premultiplied, so white shows through what is left of the alpha.
+            let white = f64::from(255 - p.alpha());
+            let (r, g, b) = (p.red(), p.green(), p.blue());
+            0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b) + white
+        })
+        .collect();
+    (pixmap.width() as usize, pixmap.height() as usize, levels)
+}
+
+/// `image` (`w` wide) blurred with a Gaussian of σ = 2 px, edges held at their last pixel; it
+/// comes out turned a quarter, which leaves differences between images as they were.
+pub fn blurred(w: usize, h: usize, image: &[f64]) -> Vec<f64> {
+    let rows = blur_rows(w, image);
+    let turned: Vec<f64> = (0..w * h).map(|i| rows[(i % h) * w + i / h]).collect();
+    blur_rows(h, &turned)
+}
+
+fn blur_rows(w: usize, image: &[f64]) -> Vec<f64> {
+    let kernel: Vec<f64> = (-6..=6_i32)
+        .map(|i| (-f64::from(i * i) / 8.0).exp())
+        .collect();
+    let total: f64 = kernel.iter().sum();
+    let at = |row: &[f64], i: usize, k: usize| row[(i + k).saturating_sub(6).min(w - 1)];
+    (image.chunks(w))
+        .flat_map(|row| {
+            (0..w).map(|i| {
+                let sum: f64 = kernel
+                    .iter()
+                    .enumerate()
+                    .map(|(k, v)| v * at(row, i, k))
+                    .sum();
+                sum / total
+            })
+        })
+        .collect()
+}
+
+/// The mean difference of two same-size PNGs drawn on white, grey and blurred (σ = 2 px), as a
+/// share of full scale.
+pub fn blurred_difference(ours: &[u8], reference: &[u8], name: &str) -> f64 {
+    let (w, h, ours) = grey(ours);
+    let (rw, rh, reference) = grey(reference);
+    assert_eq!((w, h), (rw, rh), "{name}: framed as the reference");
+    let (a, b) = (blurred(w, h, &ours), blurred(w, h, &reference));
+    a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum::<f64>() / a.len() as f64 / 255.0
+}

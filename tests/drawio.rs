@@ -603,3 +603,63 @@ fn pngs_say_which_fonts_were_missing_or_came_from_the_computer() {
         "Font No Such Font isn't available; drew its text with Liberation Sans."
     );
 }
+
+/// The characters of each `<text>` in an SVG, without spaces or list markers: the reference's
+/// lines break and space where the browser's layout does.
+fn texts(svg: &str) -> Vec<String> {
+    let doc = roxmltree::Document::parse(svg).unwrap();
+    let marker = |t: &str| {
+        let t = t.trim();
+        t == "•"
+            || t.strip_suffix('.')
+                .is_some_and(|n| n.parse::<u32>().is_ok())
+    };
+    (doc.descendants().filter(|n| n.has_tag_name("text")))
+        .map(|t| {
+            let lines = t.children().filter(|l| {
+                !marker(
+                    &l.descendants()
+                        .filter(|d| d.is_text())
+                        .filter_map(|d| d.text())
+                        .collect::<String>(),
+                )
+            });
+            let text: String = lines
+                .flat_map(|l| {
+                    l.descendants()
+                        .filter(|d| d.is_text())
+                        .filter_map(|d| d.text())
+                })
+                .collect();
+            text.split_whitespace().collect()
+        })
+        .collect()
+}
+
+#[test]
+fn renders_match_the_draw_io_viewer_within_four_percent() {
+    // References: draw.io's viewer (viewer-static.min.js 32.6.9) in Chromium, framed by our SVG.
+    let labels: Value =
+        serde_json::from_str(&fs::read_to_string(fixture("refs/labels.json")).unwrap()).unwrap();
+    let dir = folder("drawio-references");
+    for (name, want) in labels.as_object().unwrap() {
+        let file = format!("{name}.drawio");
+        let source = fs::read(fixture(&file)).unwrap();
+        assert_eq!(
+            in_dir(&dir, &file, &source, &["-o", "out.svg"]).0,
+            0,
+            "{name}"
+        );
+        let ours = texts(&fs::read_to_string(dir.join("out.svg")).unwrap());
+        for label in want.as_array().unwrap() {
+            let label: String = label.as_str().unwrap().split_whitespace().collect();
+            assert!(ours.contains(&label), "{name}: {label} not in {ours:?}");
+        }
+        let args = ["-o", "out.png", "--scale", "1"];
+        assert_eq!(in_dir(&dir, &file, &source, &args).0, 0, "{name}");
+        let ours = fs::read(dir.join("out.png")).unwrap();
+        let reference = fs::read(fixture(&format!("refs/{name}.png"))).unwrap();
+        let difference = blurred_difference(&ours, &reference, name);
+        assert!(difference <= 0.04, "{name}: {:.2} %", difference * 100.0);
+    }
+}
