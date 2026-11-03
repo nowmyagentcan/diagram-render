@@ -4,7 +4,6 @@
 //! 2020 Excalidraw); strokes from rough.js with each element's seed, text as glyph outlines.
 
 mod freehand;
-#[allow(dead_code)] // images and frames read the rest
 mod read;
 mod rough;
 mod text;
@@ -15,22 +14,30 @@ use std::fmt::Write;
 
 use crate::engine::{Checked, Rendered, Task};
 use crate::error::{Error, Warning};
+use crate::raster::Widths;
 use crate::svg::{escape, num as n};
 use read::{Element, Kind, Stroke};
 use rough::{Drawable, Fill, Op, Options, P, Seg};
 
 /// Space around the drawing, as Excalidraw exports it.
 const PADDING: f64 = 10.0;
+/// How frames and their names are drawn (`FRAME_STYLE`).
+const FRAME_RADIUS: f64 = 8.0;
+const FRAME_NAME_SIZE: f64 = 14.0;
+const FRAME_NAME_LINE_HEIGHT: f64 = 1.25;
+const FRAME_NAME_OFFSET: f64 = 3.0;
 
 pub fn render(task: &Task) -> Result<Rendered, Error> {
     let scene = read::scene(&task.lines, task.name)?;
     let mut warnings = scene.warnings;
-    let elements = scene.elements;
+    let widths = Widths::load()?;
+    let elements = with_frame_names(scene.elements, &widths);
     let mut d = Drawing {
         by_id: (elements.iter().enumerate())
             .map(|(i, e)| (e.id.as_str(), i))
             .collect(),
         elements: &elements,
+        files: &scene.files,
         background: &scene.background,
         bound: HashMap::new(),
         shapes: HashMap::new(),
@@ -39,6 +46,8 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
         texts: vec![],
         fills: vec![],
         warnings: vec![],
+        widths: &widths,
+        symbols: HashMap::new(),
     };
     for (i, e) in elements.iter().enumerate() {
         if let Some(c) = e.container_id.as_deref().and_then(|c| d.by_id.get(c)) {
@@ -60,6 +69,59 @@ pub fn check(task: &Task) -> Result<Checked, Error> {
         warnings: render(task)?.warnings,
         ..Checked::default()
     })
+}
+
+/// The elements with each frame's name before it as a text element, as Excalidraw's export
+/// adds them (`addFrameLabelsAsTextElements`), cut with `...` to the frame's width.
+fn with_frame_names(elements: Vec<Element>, widths: &Widths) -> Vec<Element> {
+    let mut out = Vec::with_capacity(elements.len());
+    for e in elements {
+        if e.kind.frame() {
+            let title = match (&e.name, e.kind) {
+                (Some(name), _) => name.clone(),
+                (None, Kind::Frame) => "Frame".into(),
+                (None, _) => "AI Frame".into(),
+            };
+            let measure = |t: &str| widths.of(t, FRAME_NAME_SIZE);
+            let (mut text, mut width) = (title.clone(), measure(&title));
+            if width > e.width {
+                let chars: Vec<char> = title.chars().collect();
+                for i in (1..=chars.len()).rev() {
+                    let cut = format!("{}...", chars[..i].iter().collect::<String>());
+                    if measure(&cut) <= e.width {
+                        text = cut;
+                        break;
+                    }
+                }
+                width = e.width;
+            }
+            let height = FRAME_NAME_SIZE * FRAME_NAME_LINE_HEIGHT;
+            out.push(Element {
+                id: String::new(),
+                kind: Kind::Text,
+                x: e.x,
+                y: e.y - FRAME_NAME_OFFSET - height,
+                width,
+                height,
+                angle: 0.0,
+                stroke_color: "#999999".into(),
+                background_color: "transparent".into(),
+                opacity: 100.0,
+                roundness: None,
+                frame_id: None,
+                link: None,
+                text,
+                font_size: FRAME_NAME_SIZE,
+                font_family: 2,
+                text_align: "left".into(),
+                line_height: FRAME_NAME_LINE_HEIGHT,
+                container_id: None,
+                ..e.clone()
+            });
+        }
+        out.push(e);
+    }
+    out
 }
 
 /// A box: left, top, right and bottom.
@@ -169,6 +231,24 @@ fn rough_options(e: &Element, continuous: bool) -> Options {
     o
 }
 
+/// An embeddable or iframe as its export placeholder draws it.
+fn placeholder_look(e: &Element) -> Element {
+    let mut e = e.clone();
+    if transparent(&e.background_color) && transparent(&e.stroke_color) {
+        e.roughness = 0.0;
+        e.background_color = "#d3d3d3".into();
+        e.fill_style = Fill::Solid;
+    } else if e.kind == Kind::Iframe {
+        if transparent(&e.stroke_color) {
+            e.stroke_color = "#000000".into();
+        }
+        if transparent(&e.background_color) {
+            e.background_color = "#f4f4f6".into();
+        }
+    }
+    e
+}
+
 fn diamond_points(e: &Element) -> [P; 4] {
     let top = ((e.width / 2.0).floor() + 1.0, 0.0);
     let right = (e.width, (e.height / 2.0).floor() + 1.0);
@@ -211,8 +291,12 @@ impl PathData {
 /// The rough.js shapes of an element (`_generateElementShape`).
 fn shapes(e: &Element, background: &str) -> Vec<Drawable> {
     match e.kind {
-        Kind::Rectangle => {
-            let look = e;
+        Kind::Rectangle | Kind::Iframe | Kind::Embeddable => {
+            let look = if e.kind.iframe_like() {
+                placeholder_look(e)
+            } else {
+                e.clone()
+            };
             let (w, h) = (e.width, e.height);
             if e.roundness.is_some() {
                 let r = corner_radius(w.min(h), e);
@@ -225,14 +309,14 @@ fn shapes(e: &Element, background: &str) -> Vec<Drawable> {
                     .q((0.0, h), (0.0, h - r))
                     .l((0.0, r))
                     .q((0.0, 0.0), (r, 0.0));
-                vec![rough::path(&p.segs, &rough_options(look, true))]
+                vec![rough::path(&p.segs, &rough_options(&look, true))]
             } else {
                 vec![rough::rectangle(
                     0.0,
                     0.0,
                     w,
                     h,
-                    &rough_options(look, false),
+                    &rough_options(&look, false),
                 )]
             }
         }
@@ -567,6 +651,7 @@ fn bezier_bounds(p0: P, p1: P, p2: P, p3: P) -> Bounds {
 struct Drawing<'a> {
     elements: &'a [Element],
     by_id: HashMap<&'a str, usize>,
+    files: &'a HashMap<String, String>,
     background: &'a str,
     /// Container index → its bound text's index.
     bound: HashMap<usize, usize>,
@@ -578,6 +663,9 @@ struct Drawing<'a> {
     texts: Vec<text::Line>,
     fills: Vec<String>,
     warnings: Vec<Warning>,
+    widths: &'a Widths,
+    /// Image symbols made so far: by file id and, when cropped, size.
+    symbols: HashMap<(Option<String>, Option<String>), usize>,
 }
 
 impl<'a> Drawing<'a> {
@@ -772,18 +860,36 @@ impl<'a> Drawing<'a> {
         }
         let (width, height) = (b.2 - b.0 + PADDING * 2.0, b.3 - b.1 + PADDING * 2.0);
         let offset = (-b.0 + PADDING, -b.1 + PADDING);
+        for (k, e) in self.elements.iter().enumerate() {
+            if e.kind.frame() {
+                let centre = (e.width / 2.0, e.height / 2.0);
+                let _ = writeln!(
+                    self.defs,
+                    r#"<clipPath id="frame-{k}"><rect{} width="{}" height="{}" rx="{r}" ry="{r}"/></clipPath>"#,
+                    placed((e.x + offset.0, e.y + offset.1), e.angle, centre),
+                    n(e.width),
+                    n(e.height),
+                    r = FRAME_RADIUS
+                );
+            }
+        }
         let els = self.elements;
         for (i, e) in els.iter().enumerate() {
             let bound = e
                 .container_id
                 .as_deref()
                 .is_some_and(|c| self.by_id.contains_key(c));
-            if e.kind == Kind::Text && bound {
+            if e.kind.iframe_like() || (e.kind == Kind::Text && bound) {
                 continue;
             }
             self.element(i, e.x + offset.0, e.y + offset.1);
             if let Some(&t) = self.bound.get(&i) {
                 self.element(t, els[t].x + offset.0, els[t].y + offset.1);
+            }
+        }
+        for (i, e) in els.iter().enumerate() {
+            if e.kind.iframe_like() {
+                self.element(i, e.x + offset.0, e.y + offset.1);
             }
         }
         let body = self.outline_texts()?;
@@ -848,6 +954,7 @@ impl<'a> Drawing<'a> {
         let frame = self.frame_of(e);
         let frame_opacity = frame.map_or(100.0, |f| self.elements[f].opacity);
         let opacity = frame_opacity * e.opacity / 10000.0;
+        let clip = frame.filter(|&f| self.elements[f].kind.frame());
         let place = placed((ox, oy), e.angle, (cx, cy));
         let mut out = String::new();
         match e.kind {
@@ -856,6 +963,21 @@ impl<'a> Drawing<'a> {
                 for s in self.shapes(i) {
                     rough::svg(&mut out, s, &attrs);
                 }
+            }
+            Kind::Embeddable | Kind::Iframe => {
+                let attrs = format!(
+                    r#"{} stroke-linecap="round"{place}"#,
+                    faded(e.opacity / 100.0)
+                );
+                for s in self.shapes(i) {
+                    rough::svg(&mut out, s, &attrs);
+                }
+                self.body += &out;
+                let label = self.embed_label(e);
+                let at = (label.x + ox - e.x, label.y + oy - e.y);
+                let place = placed(at, label.angle, (label.width / 2.0, label.height / 2.0));
+                self.text(&label, &place, 1.0);
+                return;
             }
             Kind::Line | Kind::Arrow => {
                 let mut group = String::from(r#"<g stroke-linecap="round""#);
@@ -911,6 +1033,16 @@ impl<'a> Drawing<'a> {
                     out = format!("<g{attrs}>{path}</g>\n");
                 }
             }
+            Kind::Image => out = self.image(i, (ox, oy), (cx, cy), opacity),
+            Kind::Frame | Kind::MagicFrame => {
+                let _ = writeln!(
+                    out,
+                    r##"<rect{place} width="{}px" height="{}px" rx="{r}" ry="{r}" fill="none" stroke="#bbb" stroke-width="2"/>"##,
+                    n(e.width),
+                    n(e.height),
+                    r = FRAME_RADIUS
+                );
+            }
             Kind::Text => {
                 let mut sink = String::new();
                 std::mem::swap(&mut self.body, &mut sink);
@@ -918,7 +1050,9 @@ impl<'a> Drawing<'a> {
                 std::mem::swap(&mut self.body, &mut sink);
                 out = sink;
             }
-            _ => {}
+        }
+        if let Some(f) = clip {
+            out = format!("<g clip-path=\"url(#frame-{f})\">{out}</g>\n");
         }
         if let Some(link) = &e.link {
             out = format!("<a href=\"{}\">{out}</a>\n", escape(link));
@@ -970,6 +1104,138 @@ impl<'a> Drawing<'a> {
         }
         self.body += "</g>\n";
     }
+
+    fn embed_label(&self, e: &Element) -> Element {
+        let text = match (e.kind, &e.link) {
+            (Kind::Iframe, _) => "IFrame element".to_string(),
+            (_, Some(link)) => link.clone(),
+            _ => "Empty Web-Embed".to_string(),
+        };
+        let chars = text.chars().count().max(1) as f64;
+        let size = (e.width / 2.0).min(e.width / chars).max(e.width / 30.0);
+        let lines = wrap(&text, self.widths, size, e.width - 20.0);
+        let width = lines
+            .iter()
+            .map(|l| self.widths.of(l, size))
+            .fold(0.0, f64::max);
+        let height = size * 1.15 * lines.len() as f64;
+        Element {
+            id: String::new(),
+            kind: Kind::Text,
+            x: e.x + e.width / 2.0 - width / 2.0,
+            y: e.y + e.height / 2.0 - height / 2.0,
+            width,
+            height,
+            stroke_color: if e.stroke_color != "transparent" {
+                e.stroke_color.clone()
+            } else {
+                "black".into()
+            },
+            opacity: 100.0,
+            frame_id: None,
+            link: None,
+            text: lines.join("\n"),
+            font_size: size,
+            font_family: 2,
+            text_align: "center".into(),
+            line_height: 1.15,
+            container_id: None,
+            ..e.clone()
+        }
+    }
+
+    fn image(&mut self, i: usize, (ox, oy): P, (cx, cy): P, opacity: f64) -> String {
+        let els = self.elements;
+        let e = &els[i];
+        let (width, height) = (e.width.round(), e.height.round());
+        let url = (e.file_id.as_ref())
+            .and_then(|f| self.files.get(f))
+            .filter(|u| u.starts_with("data:image/"));
+        let Some(url) = url else {
+            self.warnings.push(Warning::image_missing(&e.id, e.line));
+            return format!(
+                "<g{} opacity=\"{}\"><rect width=\"{}\" height=\"{}\" fill=\"#E7E7E7\"/></g>\n",
+                placed((ox, oy), e.angle, (cx, cy)),
+                n(opacity),
+                n(e.width),
+                n(e.height)
+            );
+        };
+        let (uw, uh) = match e.crop {
+            Some(c) => (
+                e.width / (c.width / c.natural_width),
+                e.height / (c.height / c.natural_height),
+            ),
+            None => (e.width, e.height),
+        };
+        let (crop_x, crop_y) = match e.crop {
+            Some(c) => (c.x / (c.natural_width / uw), c.y / (c.natural_height / uh)),
+            None => (0.0, 0.0),
+        };
+        let size = match e.crop {
+            Some(_) => format!(r#"width="{}" height="{}""#, n(uw), n(uh)),
+            None => r#"width="100%" height="100%""#.into(),
+        };
+        // One symbol per file, and per size for cropped images, as Excalidraw reuses them.
+        let key = (e.file_id.clone(), e.crop.map(|_| format!("{uw}x{uh}")));
+        let next = self.symbols.len();
+        let symbol = *self.symbols.entry(key).or_insert(next);
+        if symbol == next {
+            let _ = writeln!(
+                self.defs,
+                r#"<symbol id="image-{symbol}"><image href="{}" preserveAspectRatio="none" {size}/></symbol>"#,
+                escape(url)
+            );
+        }
+        let (acx, acy) = (cx + crop_x, cy + crop_y);
+        let flip = if e.scale != (1.0, 1.0) {
+            format!(
+                r#" transform="translate({} {}) scale({} {}) translate({} {})""#,
+                n(acx),
+                n(acy),
+                n(e.scale.0),
+                n(e.scale.1),
+                n(-acx),
+                n(-acy)
+            )
+        } else {
+            String::new()
+        };
+        let mut g = format!(
+            "<g{}",
+            placed((ox - crop_x, oy - crop_y), e.angle, (acx, acy))
+        );
+        if e.crop.is_some() {
+            let _ = writeln!(
+                self.defs,
+                r##"<mask id="mask-image-crop-{i}" fill="#fff"><rect x="{}" y="{}" width="{}" height="{}"/></mask>"##,
+                n(crop_x),
+                n(crop_y),
+                n(width),
+                n(height)
+            );
+            let _ = write!(g, r#" mask="url(#mask-image-crop-{i})""#);
+        }
+        if e.roundness.is_some() {
+            let r = corner_radius(e.width.min(e.height), e);
+            let _ = writeln!(
+                self.defs,
+                r#"<clipPath id="image-clipPath-{i}"><rect width="{}" height="{}" rx="{r}" ry="{r}"/></clipPath>"#,
+                n(e.width),
+                n(e.height),
+                r = n(r)
+            );
+            let _ = write!(g, r#" clip-path="url(#image-clipPath-{i})""#);
+        }
+        let _ = writeln!(
+            g,
+            r##"><use href="#image-{symbol}" width="{}" height="{}" opacity="{}"{flip}/></g>"##,
+            n(width + crop_x),
+            n(height + crop_y),
+            n(opacity)
+        );
+        g
+    }
 }
 
 /// The attribute that moves something to `at` and turns it by `angle` about `centre`.
@@ -990,4 +1256,39 @@ fn faded(opacity: f64) -> String {
         1.0 => String::new(),
         o => format!(r#" stroke-opacity="{0}" fill-opacity="{0}""#, n(o)),
     }
+}
+
+/// `text` broken into lines no wider than `max` at `size` px: at spaces when it can, else
+/// within words.
+fn wrap(text: &str, widths: &Widths, size: f64, max: f64) -> Vec<String> {
+    if !max.is_finite() || max <= 0.0 || widths.of(text, size) <= max {
+        return vec![text.to_string()];
+    }
+    let mut lines = vec![];
+    let mut line = String::new();
+    for word in text.split(' ') {
+        let tried = if line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{line} {word}")
+        };
+        if widths.of(&tried, size) <= max {
+            line = tried;
+            continue;
+        }
+        if !line.is_empty() {
+            lines.push(std::mem::take(&mut line));
+        }
+        for c in word.chars() {
+            let tried = format!("{line}{c}");
+            if !line.is_empty() && widths.of(&tried, size) > max {
+                lines.push(std::mem::take(&mut line));
+            }
+            line.push(c);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
 }

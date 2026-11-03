@@ -321,6 +321,26 @@ fn drawio_pngs_are_drawn_with_the_bundled_fonts_on_any_background() {
 }
 
 #[test]
+fn excalidraw_pngs_keep_their_outlines_on_any_background() {
+    let dir = folder("png-excalidraw");
+    let source = fixture(&dir, "excalidraw", "shapes.excalidraw");
+    png_sizes_follow_the_svg(&dir, "shapes.excalidraw", &source);
+    for (args, want) in [
+        (&[][..], [255, 255, 255, 255]),
+        (&["--background", "transparent"][..], [0, 0, 0, 0]),
+        (&["--background", "#336699"][..], [0x33, 0x66, 0x99, 255]),
+    ] {
+        let (v, png) = render(
+            &dir,
+            "shapes.excalidraw",
+            &source,
+            &[&["--to", "png"], args].concat(),
+        );
+        assert_eq!((corner(&png), warnings(&v)), (want, vec![]), "{args:?}");
+    }
+}
+
+#[test]
 fn a_d2_png_needs_the_network_for_remote_images() {
     let dir = folder("png-d2-network");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

@@ -192,6 +192,14 @@ impl Warning {
         }
     }
 
+    pub fn image_missing(id: &str, line: usize) -> Self {
+        Self {
+            code: "image_missing",
+            message: format!("Image {id} has no image data in the file; drew a placeholder."),
+            line: Some(line),
+        }
+    }
+
     pub fn html_simplified() -> Self {
         Self {
             code: "html_simplified",

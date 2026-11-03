@@ -37,7 +37,7 @@ fn svg_of(dir: &std::path::Path, source: &[u8], args: &[&str]) -> (Value, String
 #[test]
 fn every_fixture_renders_to_svg_and_png_with_no_warnings() {
     let dir = folder("excalidraw-fixtures");
-    for name in ["shapes", "arrows", "text", "freedraw", "small"] {
+    for name in ["shapes", "arrows", "text", "freedraw", "frames", "small"] {
         let file = format!("{name}.excalidraw");
         let source = fs::read(fixture(&file)).unwrap();
         for out in ["out.svg", "out.png"] {
@@ -349,6 +349,28 @@ fn images_over_the_data_limit_are_refused() {
         v["error"]["message"],
         "a.excalidraw.png holds 65.0 MiB of image data; the limit is 64 MiB."
     );
+}
+
+#[test]
+fn an_image_without_its_data_is_a_grey_box_and_a_warning() {
+    let dir = folder("excalidraw-image");
+    let image = |id: &str, file: &str| json!({"id": id, "type": "image", "x": 0, "y": 0, "width": 80, "height": 60, "fileId": file});
+    let source = json!({
+        "type": "excalidraw",
+        "elements": [image("gone", "nope"), image("text", "html")],
+        "files": {"html": {"dataURL": "data:text/html;base64,PGI+"}}
+    });
+    let source = serde_json::to_vec_pretty(&source).unwrap();
+    let (v, svg) = svg_of(&dir, &source, &[]);
+    assert_eq!(codes(&v), ["image_missing", "image_missing"]);
+    let w = &v["warnings"][0];
+    assert_eq!(
+        w["message"],
+        "Image gone has no image data in the file; drew a placeholder."
+    );
+    assert_eq!(w["line"], 5);
+    assert!(svg.contains(r##"fill="#E7E7E7""##), "{svg}");
+    assert!(!svg.contains("data:text"), "{svg}");
 }
 
 fn text(s: &str, family: i64) -> Value {
