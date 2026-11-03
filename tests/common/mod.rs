@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
 
@@ -38,9 +39,12 @@ pub fn closed() -> Stdio {
     writer.into()
 }
 
-/// A fresh, empty folder for one test.
+/// A fresh, empty folder, never shared with a test running beside this one.
 pub fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("diagram-render-{name}-{}", std::process::id()));
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let id = std::process::id();
+    let dir = std::env::temp_dir().join(format!("diagram-render-{name}-{id}-{n}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
