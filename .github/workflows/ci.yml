@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo fmt --check
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check licenses
+      - name: engines.lock pins exactly merman 0.9.3, d2 0.9.0, Graphviz 16.1.0 and expat 2.10.0
+        run: |
+          got=$(awk '!/^#/ { sub(/-(crate|notices)$/, "", $1); print $1, $2 }' scripts/engines.lock | sort -u | paste -sd,)
+          test "$got" = "d2 0.9.0,expat 2.10.0,graphviz 16.1.0,merman 0.9.3"
