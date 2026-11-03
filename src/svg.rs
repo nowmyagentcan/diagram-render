@@ -10,8 +10,8 @@ const HTML_REMOVED: [&str; 9] = [
     "iframe", "object", "embed", "form", "input", "button", "link", "meta", "base",
 ];
 
-/// `svg` without scripts, event handlers, `javascript:` and other links that aren't to `#…`,
-/// http(s), mail or image data, and `<style>` that imports or runs anything, with every other
+/// `svg` without scripts, event handlers, `javascript:` and other links with a scheme but
+/// http(s), mail and image data, and `<style>` that imports or runs anything, with every other
 /// byte kept; and how many items went. `Err` when the engine's SVG isn't well-formed XML.
 pub fn clean(svg: &str) -> Result<(String, usize), String> {
     let mut reader = Reader::from_str(svg);
@@ -113,8 +113,8 @@ fn copy_tag(out: &mut String, raw: &str, tag: &BytesStart, empty: bool) -> usize
     removed
 }
 
-/// Whether an attribute may stay: no event handler, no script URL anywhere, and links only to
-/// `#…`, http(s), mail or image data. Browsers ignore spaces and controls inside a scheme, so
+/// Whether an attribute may stay: no event handler, no script URL anywhere, and links only
+/// relative, to http(s) or mail, or to image data. Browsers ignore spaces and controls inside a scheme, so
 /// the check does too.
 fn safe(key: &str, value: &str) -> bool {
     let v: String = (value.chars())
@@ -133,11 +133,13 @@ fn safe(key: &str, value: &str) -> bool {
                 .is_some_and(|r| r.starts_with([';', ',']))
         })
     });
-    image
-        || v.starts_with('#')
-        || ["http:", "https:", "mailto:"]
-            .iter()
-            .any(|s| v.starts_with(s))
+    // A reference without a scheme (`#n`, `a.png`) points into the SVG or beside it.
+    let scheme = v.split_once(':').map(|(s, _)| s).filter(|s| {
+        s.starts_with(|c: char| c.is_ascii_alphabetic())
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
+    });
+    image || matches!(scheme, None | Some("http" | "https" | "mailto"))
 }
 
 /// Whether a `<style>` element's text loads or runs anything.
@@ -212,9 +214,9 @@ mod tests {
                 2,
             ),
             (
-                "<svg><image href=\"data:text/html,x\"/><image src=\"file:///etc/passwd\"/></svg>",
-                "<svg><image/><image/></svg>",
-                2,
+                "<svg><image href=\"data:text/html,x\"/><image src=\"file:///etc/passwd\"/><image href=\"C:\\a.png\"/><image href=\"a b/c:d.png\"/></svg>",
+                "<svg><image/><image/><image/><image href=\"a b/c:d.png\"/></svg>",
+                3,
             ),
             (
                 "<svg><set attributeName=\"href\" to=\"javascript:x\"/></svg>",
