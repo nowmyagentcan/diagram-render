@@ -360,3 +360,40 @@ fn mermaid_and_d2_pngs_over_the_limits_are_drawn_smaller() {
         );
     }
 }
+
+/// The mean difference of two images' channels, out of 255.
+fn mean_difference(a: &Pixmap, b: &Pixmap) -> f64 {
+    let pairs = a.data().iter().zip(b.data());
+    let sum: u64 = pairs.map(|(x, y)| u64::from(x.abs_diff(*y))).sum();
+    sum as f64 / a.data().len() as f64
+}
+
+#[test]
+fn pngs_with_the_bundled_fonts_match_on_every_computer() {
+    // Made on Windows x64. resvg draws the same pixels on any x86-64; other CPUs may round a
+    // few edge pixels differently.
+    let dir = folder("png-reference");
+    for (kind, name, ext) in [
+        ("dot", "clusters", "dot"),
+        ("dot", "records", "dot"),
+        ("mermaid", "flowchart", "mmd"),
+        ("mermaid", "sequence", "mmd"),
+    ] {
+        let file = format!("{name}.{ext}");
+        let source = fixture(&dir, kind, &file);
+        let (_, png) = render(&dir, &file, &source, &["--to", "png", "--scale", "1"]);
+        let got = Pixmap::decode_png(&png).unwrap();
+        let want = Pixmap::decode_png(&fs::read(format!("tests/fixtures/png/{name}.png")).unwrap());
+        let want = want.unwrap();
+        assert_eq!(
+            (got.width(), got.height()),
+            (want.width(), want.height()),
+            "{name}"
+        );
+        let difference = mean_difference(&got, &want);
+        assert!(difference <= 0.5, "{name}: {difference}");
+        if kind == "dot" && cfg!(target_arch = "x86_64") {
+            assert!(got.data() == want.data(), "{name} differs: {difference}");
+        }
+    }
+}
