@@ -67,7 +67,7 @@ jobs:
         run: |
           e=out/engines x=
           if [ "$RUNNER_OS" = Windows ]; then x=.exe; else chmod +x $e/*; fi
-          if [ "$RUNNER_OS" = Linux ]; then file $e/* | tee /dev/stderr | grep -vE 'static(-pie|ally) linked' && exit 1; fi
+          if [ "$RUNNER_OS" = Linux ]; then file $e/*; ! file $e/* | grep -vE 'static(-pie|ally) linked'; fi
           ls -l $e out/licenses/*
           test "$($e/merman-cli$x --version)" = 'merman-cli 0.9.3'
           test "$($e/d2$x --version)" = v0.9.0
@@ -79,4 +79,5 @@ jobs:
           printf 'a -> b\n' | $e/d2$x --target= --stdout-format png - - > d.png
           printf 'digraph { a -> b; c [label=<<b>x</b>y>] }\n' | $e/dot$x -Tsvg | grep -q '<text'
           printf 'graph { a -- b -- c -- a }\n' | $e/dot$x -Kneato -Tsvg | grep -q '<svg'
-          file a.png d.png | tee /dev/stderr | grep -c 'PNG image data' | grep -qx 2
+          file a.png d.png
+          for f in a.png d.png; do file $f | grep -q 'PNG image data'; done
