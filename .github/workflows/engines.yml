@@ -1,0 +1,82 @@
+# Builds or fetches the pinned engines for every release target (scripts/fetch-engines.sh), then runs
+# each one on that target's own runner. ci.yml and release.yml call it; artifacts are engines-<target>.
+name: engines
+on:
+  workflow_call:
+permissions:
+  contents: read
+env:
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: windows-x64 }
+          - { os: macos-latest, target: macos-arm64 }
+          - { os: macos-15-intel, target: macos-x64 }
+          - { os: ubuntu-24.04, target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: cache
+        uses: actions/cache@v6
+        with:
+          path: out
+          key: engines-${{ matrix.target }}-${{ hashFiles('scripts/engines.lock', 'scripts/fetch-engines.sh') }}
+      - if: steps.cache.outputs.cache-hit != 'true' && matrix.target == 'windows-x64'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+      - if: steps.cache.outputs.cache-hit != 'true' && startsWith(matrix.target, 'linux')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+      - if: steps.cache.outputs.cache-hit != 'true' && startsWith(matrix.target, 'linux')
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: sh scripts/fetch-engines.sh ${{ matrix.target }} out
+      - if: matrix.target == 'windows-x64'
+        name: The Windows engines import no C runtime DLL
+        run: |
+          objdump -p out/engines/*.exe | grep 'DLL Name'
+          ! objdump -p out/engines/*.exe | grep -iE 'DLL Name: (vcruntime|msvcp|api-ms-win-crt|libstdc|libgcc|libwinpthread)'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engines-${{ matrix.target }}
+          path: out/
+  run:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows-x64 }
+          - { os: macos-latest, target: macos-arm64 }
+          - { os: macos-15-intel, target: macos-x64 }
+          - { os: ubuntu-24.04, target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: engines-${{ matrix.target }}
+          path: out
+      - name: Each engine runs and renders
+        run: |
+          e=out/engines x=
+          if [ "$RUNNER_OS" = Windows ]; then x=.exe; else chmod +x $e/*; fi
+          if [ "$RUNNER_OS" = Linux ]; then file $e/* | tee /dev/stderr | grep -vE 'static(-pie|ally) linked' && exit 1; fi
+          ls -l $e out/licenses/*
+          test "$($e/merman-cli$x --version)" = 'merman-cli 0.9.3'
+          test "$($e/d2$x --version)" = v0.9.0
+          $e/dot$x -V 2>&1 | grep -F 'graphviz version 16.1.0'
+          printf 'flowchart TD\n  A[Start] --> B{Ok?}\n' > a.mmd
+          $e/merman-cli$x render a.mmd --format svg --output - --quiet | grep -q '<svg'
+          $e/merman-cli$x render a.mmd --format png --output a.png --scale 2 --quiet
+          printf 'a -> b: hi\nlayers: { deploy: { x -> y } }\n' | $e/d2$x --target= - - | grep -q '<svg'
+          printf 'a -> b\n' | $e/d2$x --target= --stdout-format png - - > d.png
+          printf 'digraph { a -> b; c [label=<<b>x</b>y>] }\n' | $e/dot$x -Tsvg | grep -q '<text'
+          printf 'graph { a -- b -- c -- a }\n' | $e/dot$x -Kneato -Tsvg | grep -q '<svg'
+          file a.png d.png | tee /dev/stderr | grep -c 'PNG image data' | grep -qx 2

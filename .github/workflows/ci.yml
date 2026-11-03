@@ -6,17 +6,29 @@ on:
 permissions:
   contents: read
 jobs:
+  engines:
+    uses: ./.github/workflows/engines.yml
   test:
+    needs: engines
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        include:
+          - { os: ubuntu-24.04, target: linux-x64 }
+          - { os: windows-latest, target: windows-x64 }
+          - { os: macos-latest, target: macos-arm64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - uses: actions/download-artifact@v8
+        with:
+          name: engines-${{ matrix.target }}
+          path: target/debug
+      - if: runner.os != 'Windows'
+        run: chmod +x target/debug/engines/*
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo fmt --check
