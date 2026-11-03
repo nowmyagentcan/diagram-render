@@ -1,6 +1,7 @@
 #!/bin/sh
 # fetch-engines.sh TARGET DEST: puts the engines pinned in engines.lock for TARGET (windows-x64,
-# macos-arm64, macos-x64, linux-x64, linux-arm64) in DEST/engines and their licences in DEST/licenses.
+# macos-arm64, macos-x64, linux-x64, linux-arm64) in DEST/engines, the fonts PNGs are drawn with in
+# DEST/fonts, and their licences in DEST/licenses.
 # Runs on Linux (windows-x64 is cross-built with mingw-w64) or on macOS, for the machine's own CPU.
 # merman and d2 are the upstream builds, except Linux merman: its release needs glibc 2.38, so the
 # unmodified crate is built as a static musl binary. dot is built from the unmodified Graphviz and
@@ -35,7 +36,13 @@ fetch() {
   esac
 }
 
-mkdir -p "$dest/engines" "$dest/licenses/merman" "$dest/licenses/d2" "$dest/licenses/graphviz"
+mkdir -p "$dest/engines" "$dest/fonts" "$dest/licenses/merman" "$dest/licenses/d2" "$dest/licenses/graphviz"   "$dest/licenses/fonts"
+
+fetch liberation "$work/liberation"
+for f in Sans-Regular Sans-Bold Sans-Italic Sans-BoldItalic Serif-Regular Serif-Bold Mono-Regular Mono-Bold; do
+  cp "$work/liberation/Liberation$f.ttf" "$dest/fonts/"
+done
+cp "$work/liberation/LICENSE" "$dest/licenses/fonts/Liberation-LICENSE.txt"
 
 case $target in
   linux-*)
@@ -78,4 +85,4 @@ cp "$work/expat/COPYING" "$dest/licenses/graphviz/expat-COPYING"
 
 ${host:+$host-}strip "$dest/engines/dot$exe"
 case $target in macos-*) codesign --force --sign - "$dest/engines/dot" ;; esac
-ls -l "$dest/engines"
+ls -l "$dest/engines" "$dest/fonts"
