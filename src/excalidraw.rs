@@ -3,6 +3,7 @@
 //! `renderer/staticSvgScene.ts`, `scene/Shape.ts` and `element/bounds.ts` (MIT, Copyright (c)
 //! 2020 Excalidraw); strokes from rough.js with each element's seed, text as glyph outlines.
 
+mod freehand;
 #[allow(dead_code)] // images and frames read the rest
 mod read;
 mod rough;
@@ -35,6 +36,8 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
         shapes: HashMap::new(),
         body: String::new(),
         defs: String::new(),
+        texts: vec![],
+        fills: vec![],
         warnings: vec![],
     };
     for (i, e) in elements.iter().enumerate() {
@@ -571,6 +574,9 @@ struct Drawing<'a> {
     shapes: HashMap<usize, Vec<Drawable>>,
     body: String,
     defs: String,
+    /// Text lines to outline and their colours; the body holds `\0{index}\0` where each goes.
+    texts: Vec<text::Line>,
+    fills: Vec<String>,
     warnings: Vec<Warning>,
 }
 
@@ -780,7 +786,7 @@ impl<'a> Drawing<'a> {
                 self.element(t, els[t].x + offset.0, els[t].y + offset.1);
             }
         }
-        let body = std::mem::take(&mut self.body);
+        let body = self.outline_texts()?;
         let (w, h) = (n(width), n(height));
         let mut svg = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">\n"
@@ -797,6 +803,32 @@ impl<'a> Drawing<'a> {
             );
         }
         Ok(svg + &body + "</svg>\n")
+    }
+
+    /// The body with each text line's glyph outlines in place of its marker.
+    fn outline_texts(&mut self) -> Result<String, Error> {
+        let (paths, warning) = text::outlines(&self.texts)?;
+        self.warnings.extend(warning);
+        let mut out = String::with_capacity(self.body.len());
+        for (k, part) in self.body.split('\0').enumerate() {
+            if k % 2 == 0 {
+                out += part;
+                continue;
+            }
+            let i: usize = part.parse().unwrap_or(usize::MAX);
+            if let (Some(d), Some(l), Some(fill)) =
+                (paths.get(i), self.texts.get(i), self.fills.get(i))
+                && !d.is_empty()
+            {
+                let _ = write!(
+                    out,
+                    r#"<path d="{d}" fill="{}" aria-label="{}"/>"#,
+                    escape(fill),
+                    escape(&l.text)
+                );
+            }
+        }
+        Ok(out)
     }
 
     /// One element, placed at `(ox, oy)` (`renderElementToSvg`).
@@ -857,12 +889,86 @@ impl<'a> Drawing<'a> {
                 }
                 out = group + "</g>\n";
             }
+            Kind::Freedraw => {
+                let o = Options {
+                    stroke: "none".into(),
+                    ..rough_options(e, false)
+                };
+                let attrs = format!(r#"{}{place} stroke="none""#, faded(opacity));
+                let outline =
+                    freehand::path(&e.points, &e.pressures, e.simulate_pressure, e.stroke_width);
+                let path = format!(
+                    r#"<path fill="{}" d="{outline}"/>"#,
+                    escape(&e.stroke_color)
+                );
+                if is_loop(&e.points) {
+                    let fill = rough::curve(&rough::simplify(&e.points, 0.75), &o);
+                    let mut g = String::new();
+                    rough::svg(&mut g, &fill, &attrs);
+                    let g = g.trim_end().strip_suffix("</g>").unwrap_or(&g).to_string();
+                    out = g + &path + "</g>\n";
+                } else {
+                    out = format!("<g{attrs}>{path}</g>\n");
+                }
+            }
+            Kind::Text => {
+                let mut sink = String::new();
+                std::mem::swap(&mut self.body, &mut sink);
+                self.text(e, &place, opacity);
+                std::mem::swap(&mut self.body, &mut sink);
+                out = sink;
+            }
             _ => {}
         }
         if let Some(link) = &e.link {
             out = format!("<a href=\"{}\">{out}</a>\n", escape(link));
         }
         self.body += &out;
+    }
+
+    /// A text element's lines, each to be outlined, in a group placed by `place`.
+    fn text(&mut self, e: &Element, place: &str, opacity: f64) {
+        let font = text::drawn_with(e.font_family);
+        let swapped = text::substituted(e.font_family);
+        if font != e.font_family && !self.warnings.contains(&swapped) {
+            self.warnings.push(swapped);
+        }
+        let line_px = e.font_size * e.line_height;
+        let x = match e.text_align.as_str() {
+            "center" => e.width / 2.0,
+            "right" => e.width,
+            _ => 0.0,
+        };
+        let top = text::baseline(e.font_family, e.font_size, line_px);
+        let rtl = text::rtl(&e.text);
+        let anchor = match e.text_align.as_str() {
+            "center" => "middle",
+            "right" => "end",
+            _ if rtl => "end",
+            _ => "start",
+        };
+        let _ = write!(self.body, "<g{}{place}>", faded(opacity));
+        for (k, line) in e
+            .text
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .split('\n')
+            .enumerate()
+        {
+            let at = self.texts.len();
+            self.texts.push(text::Line {
+                text: line.to_string(),
+                x,
+                y: k as f64 * line_px + top,
+                size: e.font_size,
+                font,
+                anchor,
+                rtl,
+            });
+            self.fills.push(e.stroke_color.clone());
+            let _ = write!(self.body, "\0{at}\0");
+        }
+        self.body += "</g>\n";
     }
 }
 

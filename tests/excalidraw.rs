@@ -37,7 +37,7 @@ fn svg_of(dir: &std::path::Path, source: &[u8], args: &[&str]) -> (Value, String
 #[test]
 fn every_fixture_renders_to_svg_and_png_with_no_warnings() {
     let dir = folder("excalidraw-fixtures");
-    for name in ["shapes", "arrows", "small"] {
+    for name in ["shapes", "arrows", "text", "freedraw", "small"] {
         let file = format!("{name}.excalidraw");
         let source = fs::read(fixture(&file)).unwrap();
         for out in ["out.svg", "out.png"] {
@@ -354,6 +354,69 @@ fn images_over_the_data_limit_are_refused() {
 fn text(s: &str, family: i64) -> Value {
     json!({"id": "t", "type": "text", "x": 0, "y": 0, "width": 200, "height": 25,
            "text": s, "fontSize": 20, "fontFamily": family})
+}
+
+#[test]
+fn text_is_drawn_as_outlines_with_the_text_kept_as_a_label() {
+    let dir = folder("excalidraw-text");
+    let (_, svg) = svg_of(&dir, &scene(json!([text("a <b> & c\nnext", 5)])), &[]);
+    assert!(!svg.contains("<text"), "{svg}");
+    assert!(svg.contains(r#"aria-label="a &lt;b&gt; &amp; c""#), "{svg}");
+    assert!(svg.contains(r#"aria-label="next""#), "{svg}");
+    assert_eq!(svg.matches("aria-label").count(), 2);
+}
+
+#[test]
+fn a_font_id_excalidraw_doesnt_have_is_drawn_with_excalifont() {
+    let dir = folder("excalidraw-font");
+    let (v, with_id) = svg_of(&dir, &scene(json!([text("Hello", 4)])), &[]);
+    assert_eq!(codes(&v), ["font_substituted"]);
+    assert_eq!(
+        v["warnings"][0]["message"],
+        "Font #4 isn't available; drew its text with Excalifont."
+    );
+    let (v, excalifont) = svg_of(&dir, &scene(json!([text("Hello", 5)])), &[]);
+    assert_eq!(codes(&v), Vec::<&str>::new());
+    assert_eq!(with_id, excalifont);
+}
+
+#[test]
+fn characters_outside_the_bundled_fonts_come_from_the_computer() {
+    let dir = folder("excalidraw-cjk");
+    let (v, _) = svg_of(&dir, &scene(json!([text("漢字 ok", 5)])), &[]);
+    assert_eq!(codes(&v), ["font_fallback"]);
+    assert!(
+        v["warnings"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("漢字"),
+        "{v}"
+    );
+}
+
+#[test]
+fn a_missing_font_file_is_an_install_fault() {
+    let bin = installed("excalidraw-no-fonts", &[]);
+    let dir = bin.parent().unwrap();
+    fs::create_dir(dir.join("fonts")).unwrap();
+    for entry in fs::read_dir(env!("CARGO_BIN_EXE_diagram-render").replace(
+        &format!("diagram-render{}", std::env::consts::EXE_SUFFIX),
+        "fonts",
+    ))
+    .unwrap()
+    {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            fs::copy(&path, dir.join("fonts").join(path.file_name().unwrap())).unwrap();
+        }
+    }
+    fs::write(dir.join("s.excalidraw"), scene(json!([text("Hi", 5)]))).unwrap();
+    let (code, _, err) = run_at(&bin, &["s.excalidraw", "-o", "out.svg"], b"");
+    assert_eq!(code, 3, "{err}");
+    assert!(
+        err.contains("The fonts PNGs are drawn with are missing"),
+        "{err}"
+    );
 }
 
 #[test]
