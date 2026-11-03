@@ -150,3 +150,17 @@ pub fn blurred_difference(ours: &[u8], reference: &[u8], name: &str) -> f64 {
     let (a, b) = (blurred(w, h, &ours), blurred(w, h, &reference));
     a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum::<f64>() / a.len() as f64 / 255.0
 }
+
+/// Copies `source` as `file` into `dir` and runs `args` on it there with `--json`.
+pub fn in_dir(dir: &Path, file: &str, source: &[u8], args: &[&str]) -> (i32, Value) {
+    std::fs::write(dir.join(file), source).unwrap();
+    let (code, out, err) = run_in(dir, &[&[file, "--json"], args].concat(), b"");
+    assert_eq!(err, "", "{file} {args:?}");
+    (code, serde_json::from_str(&out).unwrap())
+}
+
+/// The codes of a result's warnings.
+pub fn codes(v: &Value) -> Vec<&str> {
+    let all = v["warnings"].as_array().unwrap();
+    all.iter().map(|w| w["code"].as_str().unwrap()).collect()
+}

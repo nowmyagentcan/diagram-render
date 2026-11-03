@@ -827,7 +827,6 @@ impl View<'_> {
             self.pe.map(|p| (tenth(p.0), tenth(p.1))),
         ];
         let (source, target) = (term(self.src).map(|t| t.r), term(self.trg).map(|t| t.r));
-        let (sc, tc) = (source, target);
         let mut temp: Vec<P> = vec![];
         let mut last_pushed: Option<P> = result.first().copied().flatten();
         let mut horizontal = true;
@@ -839,6 +838,8 @@ impl View<'_> {
         };
         let in_y = |c: Option<Rect>, y: f64| c.is_some_and(|c| y >= c.y && y <= c.y + c.h);
         let in_x = |c: Option<Rect>, x: f64| c.is_some_and(|c| x >= c.x && x <= c.x + c.w);
+        let outside_y = |c: Option<Rect>, y: f64| c.is_some_and(|c| y < c.y || y > c.y + c.h);
+        let outside_x = |c: Option<Rect>, x: f64| c.is_some_and(|c| x < c.x || x > c.x + c.w);
         if !self.hints.is_empty() {
             let mut hints: Vec<P> = self.hints.to_vec();
             if let Some(&h0) = hints.first() {
@@ -861,7 +862,7 @@ impl View<'_> {
             }
             let first = hints[0];
             let mut current_term = source.filter(|_| pts[0].is_none());
-            let mut channel = sc;
+            let mut channel = source;
             let mut current_pt = pts[0];
             let mut current_hint = first;
             for i in 0..2 {
@@ -889,27 +890,22 @@ impl View<'_> {
                     }
                 }
                 current_term = target.filter(|_| pts[1].is_none());
-                channel = tc;
+                channel = target;
                 current_pt = pts[1];
                 current_hint = *hints.last().unwrap();
                 if fixed_vert && fixed_hoz {
                     hints.remove(0);
                 }
             }
-            let Some(&h) = hints.first().or(Some(&first)) else {
-                return;
-            };
-            let outside_y = |c: Option<Rect>, y: f64| c.is_some_and(|c| y < c.y || y > c.y + c.h);
-            let outside_x = |c: Option<Rect>, x: f64| c.is_some_and(|c| x < c.x || x > c.x + c.w);
             let hh = first;
             if horizontal
                 && (pts[0].is_some_and(|p| p.1 != hh.1)
-                    || (pts[0].is_none() && outside_y(sc, hh.1)))
+                    || (pts[0].is_none() && outside_y(source, hh.1)))
             {
                 temp.push((pt.0, hh.1));
             } else if !horizontal
                 && (pts[0].is_some_and(|p| p.0 != hh.0)
-                    || (pts[0].is_none() && outside_x(sc, hh.0)))
+                    || (pts[0].is_none() && outside_x(source, hh.0)))
             {
                 temp.push((hh.0, pt.1));
             }
@@ -918,7 +914,6 @@ impl View<'_> {
             } else {
                 pt.0 = hh.0;
             }
-            let _ = h;
             let mut last_hint = hh;
             for &hn in &hints {
                 horizontal = !horizontal;
@@ -941,16 +936,14 @@ impl View<'_> {
             _ => None,
         };
         if let (Some(end), Some(hint)) = (end, hint) {
-            let outside_y = |c: Option<Rect>, y: f64| c.is_some_and(|c| y < c.y || y > c.y + c.h);
-            let outside_x = |c: Option<Rect>, x: f64| c.is_some_and(|c| x < c.x || x > c.x + c.w);
             if horizontal
                 && (pts[1].is_some_and(|p| p.1 != hint.1)
-                    || (pts[1].is_none() && outside_y(tc, hint.1)))
+                    || (pts[1].is_none() && outside_y(target, hint.1)))
             {
                 temp.push((end.0, hint.1));
             } else if !horizontal
                 && (pts[1].is_some_and(|p| p.0 != hint.0)
-                    || (pts[1].is_none() && outside_x(tc, hint.0)))
+                    || (pts[1].is_none() && outside_x(target, hint.0)))
             {
                 temp.push((hint.0, end.1));
             }
@@ -958,14 +951,14 @@ impl View<'_> {
         let same = matches!((self.src, self.trg), (Some(a), Some(b)) if std::ptr::eq(a, b));
         if !same || self.style.get("innerLoopWaypoints") != Some("1") {
             if pts[0].is_none()
-                && let Some(c) = sc
+                && let Some(c) = source
             {
                 while temp.first().is_some_and(|&p| c.contains(p)) {
                     temp.remove(0);
                 }
             }
             if pts[1].is_none()
-                && let Some(c) = tc
+                && let Some(c) = target
             {
                 while temp.last().is_some_and(|&p| c.contains(p)) {
                     temp.pop();
@@ -1043,13 +1036,13 @@ impl View<'_> {
 
     /// mxEdgeStyle's `SideToSide`.
     fn side_to_side(&self, result: &mut Vec<Option<P>>) {
-        let Some((s, t, sc, tc)) = self.terminals() else {
+        let Some((s, t, source, target)) = self.terminals() else {
             return;
         };
         let pt = self.hints.first().copied();
         let (l, r) = (s.x.max(t.x), (s.x + s.w).min(t.x + t.w));
         let x = pt.map_or_else(|| (r + (l - r) / 2.0).round(), |p| p.0);
-        let (mut y1, mut y2) = (sc.1, tc.1);
+        let (mut y1, mut y2) = (source.1, target.1);
         if let Some(pt) = pt {
             if pt.1 >= s.y && pt.1 <= s.y + s.h {
                 y1 = pt.1;
@@ -1080,12 +1073,12 @@ impl View<'_> {
 
     /// mxEdgeStyle's `TopToBottom`.
     fn top_to_bottom(&self, result: &mut Vec<Option<P>>) {
-        let Some((s, t, sc, tc)) = self.terminals() else {
+        let Some((s, t, source, target)) = self.terminals() else {
             return;
         };
         let pt = self.hints.first().copied();
         let (top, bottom) = (s.y.max(t.y), (s.y + s.h).min(t.y + t.h));
-        let mut x = sc.0;
+        let mut x = source.0;
         if let Some(pt) = pt.filter(|p| p.0 >= s.x && p.0 <= s.x + s.w) {
             x = pt.0;
         }
@@ -1097,7 +1090,7 @@ impl View<'_> {
         }
         x = match pt.filter(|p| p.0 >= t.x && p.0 <= t.x + t.w) {
             Some(pt) => pt.0,
-            None => tc.0,
+            None => target.0,
         };
         if free((x, y)) {
             result.push(Some((x, y)));

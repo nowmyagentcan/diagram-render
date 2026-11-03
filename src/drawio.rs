@@ -208,6 +208,7 @@ fn table_lines(
     table: &State,
     rows: &[usize],
     cells: &[Cell],
+    children: &[Vec<usize>],
     states: &[Option<State>],
 ) -> Vec<(P, P)> {
     let t = table.rect;
@@ -225,10 +226,8 @@ fn table_lines(
         && let Some((first, row)) = rows.first()
     {
         let top = row.rect.y;
-        let ids = read::by_id(cells);
-        let mut columns: Vec<f64> = (cells.iter().enumerate())
-            .filter(|(_, c)| c.parent.and_then(|p| ids.get(p)) == Some(first))
-            .filter_map(|(i, _)| states[i].as_ref().map(|s| s.rect.x))
+        let mut columns: Vec<f64> = (children[*first].iter())
+            .filter_map(|&i| states[i].as_ref().map(|s| s.rect.x))
             .filter(|&x| x > t.x + 0.5)
             .collect();
         columns.sort_by(f64::total_cmp);
@@ -369,7 +368,7 @@ impl Drawing {
             } else if let Some(state) = &states[i] {
                 self.vertex(c, state);
                 if state.style.get("shape") == Some("table") {
-                    let lines = table_lines(state, &children[i], cells, &states);
+                    let lines = table_lines(state, &children[i], cells, &children, &states);
                     shapes::table_lines(&mut self.body, &state.style, &lines);
                 }
             }

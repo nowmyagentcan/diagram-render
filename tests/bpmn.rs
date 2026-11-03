@@ -16,19 +16,6 @@ fn fixture(file: &str) -> String {
         .into_owned()
 }
 
-/// Copies `source` as `file` into `dir` and runs `args` on it there with `--json`.
-fn in_dir(dir: &Path, file: &str, source: &[u8], args: &[&str]) -> (i32, Value) {
-    fs::write(dir.join(file), source).unwrap();
-    let (code, out, err) = run_in(dir, &[&[file, "--json"], args].concat(), b"");
-    assert_eq!(err, "", "{file} {args:?}");
-    (code, serde_json::from_str(&out).unwrap())
-}
-
-fn codes(v: &Value) -> Vec<&str> {
-    let all = v["warnings"].as_array().unwrap();
-    all.iter().map(|w| w["code"].as_str().unwrap()).collect()
-}
-
 /// A process with one shape and one edge, and `extra` inside the plane.
 fn process(extra: &str) -> String {
     format!(

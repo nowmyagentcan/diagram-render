@@ -381,12 +381,6 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
     let rounded = st.on("rounded");
     let arc = st.num("arcSize", LINE_ARCSIZE) / 2.0;
     let mut body = String::new();
-    let polygon_path = |pts: &[P]| {
-        let mut p = Path::default();
-        let pts: Vec<P> = pts.iter().map(|&(px, py)| (x + px, y + py)).collect();
-        p.points(&pts, rounded, arc, true);
-        p.0
-    };
     let path = |body: &mut String, d: &str, attrs: &str| {
         let _ = write!(body, r#"<path d="{}" {attrs}/>"#, d.trim_end());
     };
@@ -491,32 +485,23 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
         }
         "rhombus" | "triangle" | "hexagon" | "parallelogram" | "trapezoid" | "step" | "card"
         | "note" => {
-            let pts = polygon(
-                &Style::default_for(shape, st),
-                Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w,
-                    h,
-                },
-            );
-            let pts = pts.unwrap_or_default();
-            // `note` keeps its corners square, and folds one over.
-            let d = match shape {
-                "note" => {
-                    let mut p = Path::default();
-                    p.points(
-                        &pts.iter()
-                            .map(|&(px, py)| (x + px, y + py))
-                            .collect::<Vec<_>>(),
-                        false,
-                        0.0,
-                        true,
-                    );
-                    p.0
-                }
-                _ => polygon_path(&pts),
+            // Drawn in its own painted box: the transform turns and flips it.
+            let mut own = st.clone();
+            for key in ["direction", "flipH", "flipV"] {
+                own.unset(key);
+            }
+            let local_box = Rect {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h,
             };
+            let pts = polygon(&own, local_box).unwrap_or_default();
+            // `note` keeps its corners square, and folds one over.
+            let mut p = Path::default();
+            let pts: Vec<P> = pts.iter().map(|&(px, py)| (x + px, y + py)).collect();
+            p.points(&pts, rounded && shape != "note", arc, true);
+            let d = p.0;
             path(&mut body, &d, &paint_attrs);
             if shape == "note" {
                 let s = st.num("size", 30.0).clamp(0.0, w.min(h));
@@ -758,18 +743,6 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
         if link.is_some() { "</a>" } else { "" }
     );
     note
-}
-
-impl Style {
-    /// The style with `shape` set: for drawing a polygon in its own painted box.
-    fn default_for(shape: &str, st: &Style) -> Style {
-        let mut s = st.clone();
-        s.set("shape", shape);
-        s.unset("direction");
-        s.unset("flipH");
-        s.unset("flipV");
-        s
-    }
 }
 
 /// The corner radius of a rounded box.
