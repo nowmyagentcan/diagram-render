@@ -10,6 +10,10 @@ use crate::engine::{Checked, Page, Rendered, Task};
 use crate::error::{Error, Warning};
 use crate::input::Lines;
 
+mod shapes;
+
+use shapes::Paint;
+
 const MODEL: &str = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 const BPMNDI: &str = "http://www.omg.org/spec/BPMN/20100524/DI";
 const DC: &str = "http://www.omg.org/spec/DD/20100524/DC";
@@ -19,6 +23,8 @@ const DI: &str = "http://www.omg.org/spec/DD/20100524/DI";
 const LIMIT: usize = 20_000;
 /// Space around the drawing, as bpmn-js leaves when it saves an SVG.
 const PAD: f64 = 5.0;
+/// bpmn-js's ink.
+const INK: &str = "#22242a";
 
 pub fn render(task: &Task) -> Result<Rendered, Error> {
     // XML reads every line end as LF, and so lines are counted as everywhere else.
@@ -71,13 +77,24 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
     for item in items {
         let id = item.attribute("id").unwrap_or("?");
         let reference = item.attribute("bpmnElement").unwrap_or_default();
-        if !model.contains_key(reference) {
+        let Some(&el) = model.get(reference) else {
             warnings.push(Warning::di_reference_missing(id, reference, line(item)));
             continue;
-        }
+        };
         if item.tag_name().name() == "BPMNShape" {
+            let paint = Paint {
+                fill: "white",
+                stroke: INK,
+            };
             match bounds(item) {
-                Some(b) => svg.rect(b),
+                Some(b) => {
+                    svg.include(b.x, b.y);
+                    svg.include(b.x + b.w, b.y + b.h);
+                    if !shapes::flow_node(&mut svg.body, &model, el, item, b, &paint) {
+                        shapes::rect(&mut svg.body, b, 0.0, paint.fill, paint.stroke, 2.0, "");
+                        svg.body.push('\n');
+                    }
+                }
                 None => warnings.push(Warning::skipped(
                     "element_skipped",
                     "shape",
@@ -214,26 +231,13 @@ impl Svg {
         self.extent = Some(((x0.min(x), y0.min(y)), (x1.max(x), y1.max(y))));
     }
 
-    fn rect(&mut self, b: Rect) {
-        self.include(b.x, b.y);
-        self.include(b.x + b.w, b.y + b.h);
-        let _ = writeln!(
-            self.body,
-            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="white" stroke="black" stroke-width="2"/>"#,
-            n(b.x),
-            n(b.y),
-            n(b.w),
-            n(b.h)
-        );
-    }
-
     fn line(&mut self, points: &[(f64, f64)]) {
         for &(x, y) in points {
             self.include(x, y);
         }
         let _ = writeln!(
             self.body,
-            r#"<polyline points="{}" fill="none" stroke="black" stroke-width="2"/>"#,
+            r#"<polyline points="{}" fill="none" stroke="{INK}" stroke-width="2"/>"#,
             path(points)
         );
     }
@@ -256,7 +260,8 @@ impl Svg {
                 );
             }
         }
-        svg + &self.body + "</svg>\n"
+        svg += "<g stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+        svg + &self.body + "</g>\n</svg>\n"
     }
 }
 

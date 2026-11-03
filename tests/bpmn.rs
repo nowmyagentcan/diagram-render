@@ -288,3 +288,36 @@ fn backgrounds_replace_the_white_one() {
         }
     }
 }
+
+/// The fixtures that show every element, marker and edge kind.
+const FIXTURES: [&str; 6] = [
+    "activities",
+    "events",
+    "gateways-data",
+    "collaboration",
+    "vertical",
+    "colors",
+];
+
+#[test]
+fn every_fixture_renders_to_svg_and_png_at_the_svg_size() {
+    let dir = folder("bpmn-fixtures");
+    for name in FIXTURES {
+        let file = format!("{name}.bpmn");
+        let source = fs::read(fixture(&file)).unwrap();
+        let (code, svg) = in_dir(&dir, &file, &source, &[]);
+        assert_eq!((code, codes(&svg)), (0, vec![]), "{name}: {svg}");
+        for scale in [1.0, 2.0] {
+            let s = scale.to_string();
+            let (code, png) = in_dir(&dir, &file, &source, &["--to", "png", "--scale", &s]);
+            assert_eq!((code, codes(&png)), (0, vec![]), "{name}: {png}");
+            for k in ["width", "height"] {
+                let want = svg[k].as_f64().unwrap() * scale;
+                assert!(
+                    (png[k].as_f64().unwrap() - want).abs() <= 1.0,
+                    "{name} {k}: {png}"
+                );
+            }
+        }
+    }
+}

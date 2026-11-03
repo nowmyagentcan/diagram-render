@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" id="events" targetNamespace="http://example.com/bpmn">
+  <bpmn:process id="events_process" isExecutable="false">
+    <bpmn:startEvent id="e0" name="None"></bpmn:startEvent>
+    <bpmn:startEvent id="e1" name="Message"><bpmn:messageEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e2" name="Timer"><bpmn:timerEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e3" name="Conditional"><bpmn:conditionalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e4" name="Signal"><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e5" name="Multiple"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e6" name="Parallel multiple" parallelMultiple="true"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e7" name="Message" isInterrupting="false"><bpmn:messageEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e8" name="Timer" isInterrupting="false"><bpmn:timerEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e9" name="Escalation" isInterrupting="false"><bpmn:escalationEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e10" name="Conditional" isInterrupting="false"><bpmn:conditionalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e11" name="Signal" isInterrupting="false"><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e12" name="Multiple" isInterrupting="false"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:startEvent id="e13" name="Parallel multiple" parallelMultiple="true" isInterrupting="false"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:startEvent>
+    <bpmn:intermediateCatchEvent id="e14" name="Message"><bpmn:messageEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e15" name="Timer"><bpmn:timerEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e16" name="Conditional"><bpmn:conditionalEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e17" name="Link"><bpmn:linkEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e18" name="Signal"><bpmn:signalEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e19" name="Multiple"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="e20" name="Parallel multiple" parallelMultiple="true"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:intermediateCatchEvent>
+    <bpmn:intermediateThrowEvent id="e21" name="None"></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e22" name="Message"><bpmn:messageEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e23" name="Escalation"><bpmn:escalationEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e24" name="Link"><bpmn:linkEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e25" name="Compensate"><bpmn:compensateEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e26" name="Signal"><bpmn:signalEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:intermediateThrowEvent id="e27" name="Multiple"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="e28" name="None"></bpmn:endEvent>
+    <bpmn:endEvent id="e29" name="Message"><bpmn:messageEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e30" name="Escalation"><bpmn:escalationEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e31" name="Error"><bpmn:errorEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e32" name="Cancel"><bpmn:cancelEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e33" name="Compensate"><bpmn:compensateEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e34" name="Signal"><bpmn:signalEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e35" name="Multiple"><bpmn:messageEventDefinition /><bpmn:signalEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="e36" name="Terminate"><bpmn:terminateEventDefinition /></bpmn:endEvent>
+    <bpmn:task id="host1" name="Interrupted task" />
+    <bpmn:task id="host2" name="Task that goes on" />
+    <bpmn:boundaryEvent id="b0" attachedToRef="host1"><bpmn:errorEventDefinition /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b1" attachedToRef="host1"><bpmn:timerEventDefinition /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b2" attachedToRef="host2" cancelActivity="false"><bpmn:messageEventDefinition /></bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b3" attachedToRef="host2" cancelActivity="false"><bpmn:escalationEventDefinition /></bpmn:boundaryEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="events_diagram" name="Events">
+    <bpmndi:BPMNPlane id="events_diagram_plane" bpmnElement="events_process">
+      <bpmndi:BPMNShape id="e0_di" bpmnElement="e0">
+        <dc:Bounds x="160" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="164" y="123" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e1_di" bpmnElement="e1">
+        <dc:Bounds x="270" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="265" y="123" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e2_di" bpmnElement="e2">
+        <dc:Bounds x="380" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="381" y="123" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e3_di" bpmnElement="e3">
+        <dc:Bounds x="490" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="473" y="123" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e4_di" bpmnElement="e4">
+        <dc:Bounds x="600" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="598" y="123" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e5_di" bpmnElement="e5">
+        <dc:Bounds x="710" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="702" y="123" width="52" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e6_di" bpmnElement="e6">
+        <dc:Bounds x="820" y="80" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="793" y="123" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e7_di" bpmnElement="e7">
+        <dc:Bounds x="160" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="155" y="233" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e8_di" bpmnElement="e8">
+        <dc:Bounds x="270" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="271" y="233" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e9_di" bpmnElement="e9">
+        <dc:Bounds x="380" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="366" y="233" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e10_di" bpmnElement="e10">
+        <dc:Bounds x="490" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="473" y="233" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e11_di" bpmnElement="e11">
+        <dc:Bounds x="600" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="598" y="233" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e12_di" bpmnElement="e12">
+        <dc:Bounds x="710" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="702" y="233" width="52" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e13_di" bpmnElement="e13">
+        <dc:Bounds x="820" y="190" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="793" y="233" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e14_di" bpmnElement="e14">
+        <dc:Bounds x="160" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="155" y="343" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e15_di" bpmnElement="e15">
+        <dc:Bounds x="270" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="271" y="343" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e16_di" bpmnElement="e16">
+        <dc:Bounds x="380" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="363" y="343" width="70" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e17_di" bpmnElement="e17">
+        <dc:Bounds x="490" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="494" y="343" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e18_di" bpmnElement="e18">
+        <dc:Bounds x="600" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="598" y="343" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e19_di" bpmnElement="e19">
+        <dc:Bounds x="710" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="702" y="343" width="52" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e20_di" bpmnElement="e20">
+        <dc:Bounds x="820" y="300" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="793" y="343" width="90" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e21_di" bpmnElement="e21">
+        <dc:Bounds x="160" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="164" y="453" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e22_di" bpmnElement="e22">
+        <dc:Bounds x="270" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="265" y="453" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e23_di" bpmnElement="e23">
+        <dc:Bounds x="380" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="366" y="453" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e24_di" bpmnElement="e24">
+        <dc:Bounds x="490" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="494" y="453" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e25_di" bpmnElement="e25">
+        <dc:Bounds x="600" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="586" y="453" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e26_di" bpmnElement="e26">
+        <dc:Bounds x="710" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="708" y="453" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e27_di" bpmnElement="e27">
+        <dc:Bounds x="820" y="410" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="812" y="453" width="52" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e28_di" bpmnElement="e28">
+        <dc:Bounds x="160" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="164" y="563" width="28" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e29_di" bpmnElement="e29">
+        <dc:Bounds x="270" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="265" y="563" width="46" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e30_di" bpmnElement="e30">
+        <dc:Bounds x="380" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="366" y="563" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e31_di" bpmnElement="e31">
+        <dc:Bounds x="490" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="491" y="563" width="34" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e32_di" bpmnElement="e32">
+        <dc:Bounds x="600" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="598" y="563" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e33_di" bpmnElement="e33">
+        <dc:Bounds x="710" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="696" y="563" width="64" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e34_di" bpmnElement="e34">
+        <dc:Bounds x="820" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="818" y="563" width="40" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e35_di" bpmnElement="e35">
+        <dc:Bounds x="930" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="922" y="563" width="52" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e36_di" bpmnElement="e36">
+        <dc:Bounds x="1040" y="520" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1029" y="563" width="58" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="host1_di" bpmnElement="host1">
+        <dc:Bounds x="160" y="650" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="host2_di" bpmnElement="host2">
+        <dc:Bounds x="400" y="650" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b0_di" bpmnElement="b0">
+        <dc:Bounds x="172" y="712" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b1_di" bpmnElement="b1">
+        <dc:Bounds x="218" y="712" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b2_di" bpmnElement="b2">
+        <dc:Bounds x="412" y="712" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b3_di" bpmnElement="b3">
+        <dc:Bounds x="458" y="712" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

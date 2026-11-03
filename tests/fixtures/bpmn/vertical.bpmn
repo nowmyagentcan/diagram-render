@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" id="vertical" targetNamespace="http://example.com/bpmn">
+  <bpmn:collaboration id="vcollab">
+    <bpmn:participant id="vpool" name="Warehouse" processRef="v_process" />
+  </bpmn:collaboration>
+  <bpmn:process id="v_process" isExecutable="false">
+    <bpmn:laneSet id="vlanes">
+      <bpmn:lane id="pick" name="Picking"><bpmn:flowNodeRef>v_start</bpmn:flowNodeRef><bpmn:flowNodeRef>v_pick</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="pack" name="Packing"><bpmn:flowNodeRef>v_pack</bpmn:flowNodeRef><bpmn:flowNodeRef>v_end</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="v_start" name="Order paid" />
+    <bpmn:task id="v_pick" name="Pick the items" />
+    <bpmn:task id="v_pack" name="Pack the items" />
+    <bpmn:endEvent id="v_end" name="Ready" />
+    <bpmn:sequenceFlow id="v_f1" sourceRef="v_start" targetRef="v_pick" />
+    <bpmn:sequenceFlow id="v_f2" sourceRef="v_pick" targetRef="v_pack" />
+    <bpmn:sequenceFlow id="v_f3" sourceRef="v_pack" targetRef="v_end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="v_diagram" name="Vertical pool">
+    <bpmndi:BPMNPlane id="v_diagram_plane" bpmnElement="vcollab">
+      <bpmndi:BPMNShape id="vpool_di" bpmnElement="vpool" isHorizontal="false">
+        <dc:Bounds x="160" y="80" width="360" height="480" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="pick_di" bpmnElement="pick" isHorizontal="false">
+        <dc:Bounds x="160" y="110" width="180" height="450" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="pack_di" bpmnElement="pack" isHorizontal="false">
+        <dc:Bounds x="340" y="110" width="180" height="450" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v_start_di" bpmnElement="v_start">
+        <dc:Bounds x="232" y="152" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="222" y="195" width="55" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v_pick_di" bpmnElement="v_pick">
+        <dc:Bounds x="200" y="250" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v_pack_di" bpmnElement="v_pack">
+        <dc:Bounds x="380" y="250" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v_end_di" bpmnElement="v_end">
+        <dc:Bounds x="412" y="422" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="414" y="465" width="32" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="v_f1_di" bpmnElement="v_f1">
+        <di:waypoint x="250" y="188" />
+        <di:waypoint x="250" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="v_f2_di" bpmnElement="v_f2">
+        <di:waypoint x="300" y="290" />
+        <di:waypoint x="380" y="290" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="v_f3_di" bpmnElement="v_f3">
+        <di:waypoint x="430" y="330" />
+        <di:waypoint x="430" y="422" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
