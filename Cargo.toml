@@ -7,7 +7,14 @@ description = "Render Mermaid, Graphviz DOT, D2, BPMN, draw.io and Excalidraw di
 repository = "https://github.com/nowmyagentcan/diagram-render"
 publish = false
 
+[dependencies]
+lexopt = "0.3.2"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
 strip = true
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Win32_System_Console"] }

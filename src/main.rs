@@ -1,14 +1,428 @@
+//! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
+
+mod error;
+mod text;
+
+use std::ffi::OsString;
+use std::io::{self, Write};
 use std::process::ExitCode;
 
+use error::Error;
+use lexopt::Arg::{Long, Short, Value};
+use serde_json::json;
+use text::Look;
+
+const HELP: &str = "\
+Render Mermaid, DOT, D2, BPMN, draw.io and Excalidraw diagrams.
+
+Usage: diagram-render <INPUT> [OPTIONS]
+       diagram-render <COMMAND>
+
+Commands:
+  render   Render a diagram to SVG or PNG (the default)
+  check    Check a diagram for errors without rendering it
+  formats  List the formats and whether each engine runs here
+  ui       Open the local web page
+  mcp      Run the MCP server on stdio
+
+Options:
+  -o, --output <FILE>    .svg or .png path, or - for stdout [default: beside the input]
+      --to <svg|png>     output format [default: from -o, else svg]
+      --format <F>       auto, mermaid, dot, d2, bpmn, drawio, excalidraw [default: auto]
+      --scale <N>        PNG pixels per SVG pixel, 0.1-8 [default: 2]
+      --background <B>   auto, transparent, white, #RGB or #RRGGBB [default: auto]
+      --page <P>         page number or name (draw.io, BPMN, D2) [default: the first]
+      --allow-network    let D2 fetch remote images
+      --timeout <S>      stop an engine after S seconds, 1-600 [default: 60]
+      --json             print one JSON object
+      --debug            show engine command lines and full output
+  -h, --help             print help
+  -V, --version          print version
+
+Examples:
+  diagram-render flow.mmd                          # writes flow.svg
+  diagram-render flow.mmd -o flow.png
+  diagram-render graph.dot --to png --scale 3
+  diagram-render arch.d2 -o arch.png --allow-network
+  diagram-render order.bpmn --to png
+  diagram-render board.drawio --page 2 -o page2.svg
+  diagram-render sketch.excalidraw --to png --background transparent
+  echo \"graph TD; A-->B\" | diagram-render - --format mermaid -o ab.png --json
+  diagram-render check flow.mmd
+  diagram-render formats
+";
+
+const CHECK_HELP: &str = "\
+Check a diagram for errors without rendering it.
+
+Usage: diagram-render check <INPUT> [OPTIONS]
+
+Options:
+      --format <F>       auto, mermaid, dot, d2, bpmn, drawio, excalidraw [default: auto]
+      --page <P>         page number or name (draw.io, BPMN, D2) [default: the first]
+      --timeout <S>      stop an engine after S seconds, 1-600 [default: 60]
+      --json             print one JSON object
+      --debug            show engine command lines and full output
+  -h, --help             print help
+
+Examples:
+  diagram-render check flow.mmd
+  diagram-render check broken.d2 --json
+";
+
+#[derive(Clone, Copy, PartialEq)]
+enum Command {
+    Render,
+    Check,
+}
+
+#[derive(Default)]
+struct Args {
+    input: Option<OsString>,
+    json: bool,
+}
+
+enum Parsed {
+    Run(Args),
+    Print(String),
+}
+
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
-        Some("--version" | "-V") => {
-            println!("diagram-render {}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    // A usage error is JSON when --json comes before any `--`, wherever the error is.
+    let json = args
+        .iter()
+        .take_while(|a| *a != "--")
+        .any(|a| a == "--json");
+    // Only an exact first argument is a command: `./check` is a file.
+    let (command, rest) = match args.first().and_then(|a| a.to_str()) {
+        Some("render") => (Command::Render, &args[1..]),
+        Some("check") => (Command::Check, &args[1..]),
+        _ => (Command::Render, &args[..]),
+    };
+    let code = match parse(command, rest) {
+        Ok(Parsed::Print(text)) => finish(io::stdout().write_all(text.as_bytes()), 0),
+        Ok(Parsed::Run(args)) => run(command, args),
+        Err(e) if json => finish(writeln!(io::stdout(), "{}", json!({"error": e.json()})), 2),
+        Err(e) => finish(text::error(&mut io::stderr(), Look::stderr(), None, &e), 2),
+    };
+    ExitCode::from(code)
+}
+
+/// The run's exit code once its output is written: a reader that hung up ends it quietly with
+/// the code it would have had, any other failure to write is 3.
+fn finish(written: io::Result<()>, code: u8) -> u8 {
+    match written {
+        Err(e) if e.kind() != io::ErrorKind::BrokenPipe => 3,
+        _ => code,
+    }
+}
+
+fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
+    let mut p = lexopt::Parser::from_args(args.iter().cloned());
+    let mut args = Args::default();
+    let mut seen: Vec<&'static str> = vec![];
+    while let Some(arg) = p.next()? {
+        let name = match arg {
+            Short('o') => "--output",
+            Short('h') => "--help",
+            Short('V') => "--version",
+            Long(long) => OPTIONS
+                .iter()
+                .map(|(o, _)| *o)
+                .find(|o| o[2..] == *long)
+                .unwrap_or(""),
+            _ => "",
+        };
+        if !name.is_empty() && seen.contains(&name) {
+            return Err(Error::invalid_option(
+                format!("{name} is given twice."),
+                "Give each option once.",
+            ));
         }
-        _ => {
-            eprintln!("Usage: diagram-render --version");
-            ExitCode::from(2)
+        let render_only = [
+            "--output",
+            "--to",
+            "--scale",
+            "--background",
+            "--allow-network",
+        ];
+        if command == Command::Check && render_only.contains(&name) {
+            return Err(Error::invalid_option(
+                format!("{name} doesn't apply to check."),
+                "Run diagram-render check --help for its options.",
+            ));
+        }
+        seen.push(name);
+        match (name, arg) {
+            ("--help", _) => {
+                let help = if command == Command::Check {
+                    CHECK_HELP
+                } else {
+                    HELP
+                };
+                return Ok(Parsed::Print(help.into()));
+            }
+            ("--version", _) if command == Command::Render => {
+                return Ok(Parsed::Print(format!(
+                    "diagram-render {}\n",
+                    env!("CARGO_PKG_VERSION")
+                )));
+            }
+            ("--json", _) => args.json = true,
+            ("--debug" | "--allow-network", _) => {}
+            ("--output", _) => drop(p.value()?),
+            ("--to", _) => to(&string(&mut p, name)?)?,
+            ("--format", _) => format(&string(&mut p, name)?)?,
+            ("--scale", _) => drop(scale(&string(&mut p, name)?)?),
+            ("--background", _) => background(&string(&mut p, name)?)?,
+            ("--page", _) => page(&string(&mut p, name)?)?,
+            ("--timeout", _) => drop(timeout(&string(&mut p, name)?)?),
+            (_, Value(input)) if args.input.is_none() => args.input = Some(input),
+            (_, Value(_)) => return Err(Error::one_input_only()),
+            (_, arg) => {
+                let option = match arg {
+                    Short(c) => format!("-{c}"),
+                    Long(l) => format!("--{l}"),
+                    Value(_) => unreachable!("values are matched above"),
+                };
+                let help = if command == Command::Check {
+                    " check"
+                } else {
+                    ""
+                };
+                return Err(Error::invalid_option(
+                    format!("Unknown option {option}."),
+                    format!("Run diagram-render{help} --help for the options."),
+                ));
+            }
+        }
+    }
+    Ok(Parsed::Run(args))
+}
+
+/// Every long option, with an example of its value for hints.
+const OPTIONS: &[(&str, &str)] = &[
+    ("--output", "-o flow.png"),
+    ("--to", "--to png"),
+    ("--format", "--format mermaid"),
+    ("--scale", "--scale 2"),
+    ("--background", "--background white"),
+    ("--page", "--page 2"),
+    ("--allow-network", ""),
+    ("--timeout", "--timeout 120"),
+    ("--json", ""),
+    ("--debug", ""),
+    ("--help", ""),
+    ("--version", ""),
+];
+
+/// `Try --scale 2.` for an option that takes a value.
+fn try_hint(option: &str) -> String {
+    let example = OPTIONS
+        .iter()
+        .find(|(o, _)| *o == option)
+        .map_or("", |o| o.1);
+    format!("Try {example}.")
+}
+
+impl From<lexopt::Error> for Error {
+    fn from(e: lexopt::Error) -> Self {
+        lexopt_error(e)
+    }
+}
+
+fn lexopt_error(e: lexopt::Error) -> Error {
+    match e {
+        lexopt::Error::MissingValue {
+            option: Some(option),
+        } => {
+            let option = if option == "-o" {
+                "--output".into()
+            } else {
+                option
+            };
+            Error::invalid_option(format!("{option} needs a value."), try_hint(&option))
+        }
+        lexopt::Error::UnexpectedValue { option, .. } => Error::invalid_option(
+            format!("{option} takes no value."),
+            format!("Write {option} on its own."),
+        ),
+        lexopt::Error::NonUnicodeValue(_) => Error::invalid_option(
+            "An option's value isn't valid text.",
+            "Use plain text for option values.",
+        ),
+        e => Error::invalid_option(
+            format!("{e}."),
+            "Run diagram-render --help for the options.",
+        ),
+    }
+}
+
+/// The value of `option` as text.
+fn string(p: &mut lexopt::Parser, option: &str) -> Result<String, Error> {
+    p.value()?
+        .into_string()
+        .map_err(|_| Error::invalid_option(format!("{option} isn't valid text."), try_hint(option)))
+}
+
+fn to(v: &str) -> Result<(), Error> {
+    match v.to_ascii_lowercase().as_str() {
+        "svg" | "png" => Ok(()),
+        _ => Err(Error::invalid_option(
+            "--to must be svg or png.",
+            try_hint("--to"),
+        )),
+    }
+}
+
+fn format(v: &str) -> Result<(), Error> {
+    const NAMES: &[&str] = &[
+        "auto",
+        "mermaid",
+        "dot",
+        "graphviz",
+        "gv",
+        "d2",
+        "bpmn",
+        "drawio",
+        "excalidraw",
+    ];
+    match NAMES.contains(&v.to_ascii_lowercase().as_str()) {
+        true => Ok(()),
+        false => Err(Error::invalid_option(
+            "--format must be auto, mermaid, dot, d2, bpmn, drawio or excalidraw.",
+            try_hint("--format"),
+        )),
+    }
+}
+
+/// `--scale`: 0.1 to 8 with at most 2 decimals.
+fn scale(v: &str) -> Result<f64, Error> {
+    let (whole, decimals) = v.split_once('.').unwrap_or((v, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(whole) || !digits(decimals) || whole.len() + decimals.len() == 0 {
+        return Err(Error::invalid_option(
+            "--scale must be between 0.1 and 8.",
+            try_hint("--scale"),
+        ));
+    }
+    if decimals.len() > 2 {
+        return Err(Error::invalid_option(
+            "--scale takes at most 2 decimals.",
+            "Try --scale 1.25.",
+        ));
+    }
+    match v.parse::<f64>() {
+        Ok(s) if (0.1..=8.0).contains(&s) => Ok(s),
+        _ => Err(Error::invalid_option(
+            "--scale must be between 0.1 and 8.",
+            try_hint("--scale"),
+        )),
+    }
+}
+
+fn background(v: &str) -> Result<(), Error> {
+    let hex = v
+        .strip_prefix('#')
+        .is_some_and(|h| matches!(h.len(), 3 | 6) && h.bytes().all(|b| b.is_ascii_hexdigit()));
+    match hex || ["auto", "transparent", "white"].contains(&v.to_ascii_lowercase().as_str()) {
+        true => Ok(()),
+        false => Err(Error::invalid_option(
+            "--background must be auto, transparent, white, #RGB or #RRGGBB.",
+            try_hint("--background"),
+        )),
+    }
+}
+
+fn page(v: &str) -> Result<(), Error> {
+    match v.trim().is_empty() {
+        true => Err(Error::invalid_option(
+            "--page needs a page number or name.",
+            try_hint("--page"),
+        )),
+        false => Ok(()),
+    }
+}
+
+/// `--timeout`: whole seconds from 1 to 600.
+fn timeout(v: &str) -> Result<u64, Error> {
+    match v.parse::<u64>() {
+        Ok(s) if v.bytes().all(|b| b.is_ascii_digit()) && (1..=600).contains(&s) => Ok(s),
+        _ => Err(Error::invalid_option(
+            "--timeout must be a whole number of seconds from 1 to 600.",
+            try_hint("--timeout"),
+        )),
+    }
+}
+
+fn run(command: Command, args: Args) -> u8 {
+    let Some(input) = args.input else {
+        let e = Error::no_input();
+        return match args.json {
+            true => finish(writeln!(io::stdout(), "{}", json!({"error": e.json()})), 2),
+            false => finish(text::error(&mut io::stderr(), Look::stderr(), None, &e), 2),
+        };
+    };
+    let name = input.to_string_lossy();
+    let e = Error::internal("no renderer is built in yet");
+    let written = if args.json {
+        let result = match command {
+            Command::Render => json!({
+                "input": name, "format": null, "output": null, "error": e.json(),
+                "warnings": [], "engine": null,
+            }),
+            Command::Check => json!({
+                "input": name, "format": null, "diagram_type": null, "valid": false,
+                "errors": [e.check_json()], "warnings": [], "engine": null,
+            }),
+        };
+        writeln!(io::stdout(), "{result}")
+    } else {
+        text::error(&mut io::stderr(), Look::stderr(), Some(&name), &e)
+    };
+    finish(written, e.exit_code())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scales_take_two_decimals_between_a_tenth_and_eight() {
+        assert_eq!(scale("2").unwrap(), 2.0);
+        assert_eq!(scale("0.1").unwrap(), 0.1);
+        assert_eq!(scale("8.00").unwrap(), 8.0);
+        assert_eq!(scale(".5").unwrap(), 0.5);
+        for bad in ["0.09", "8.01", "", ".", "-1", "1e1", "inf", "2,5", " 2"] {
+            assert_eq!(
+                scale(bad).unwrap_err().message,
+                "--scale must be between 0.1 and 8.",
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            scale("1.125").unwrap_err().message,
+            "--scale takes at most 2 decimals."
+        );
+    }
+
+    #[test]
+    fn timeouts_are_whole_seconds_up_to_ten_minutes() {
+        assert_eq!(timeout("1").unwrap(), 1);
+        assert_eq!(timeout("600").unwrap(), 600);
+        for bad in ["0", "601", "1.5", "+5", "", "-1"] {
+            assert!(timeout(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn backgrounds_are_named_or_hex() {
+        for good in ["auto", "Transparent", "white", "#fff", "#336699", "#ABCDEF"] {
+            assert!(background(good).is_ok(), "{good}");
+        }
+        for bad in ["black", "#ff", "#12345", "#ggg", "336699", ""] {
+            assert!(background(bad).is_err(), "{bad}");
         }
     }
 }
