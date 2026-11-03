@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::fontdb::{self, Database, Family, ID};
 use resvg::usvg::{self, FontFamily, FontResolver, FontStretch, FontStyle, ImageHrefResolver};
+use skrifa::instance::{LocationRef, Size};
 use skrifa::{FontRef, MetadataProvider};
 
 use crate::engine;
@@ -125,6 +126,34 @@ pub fn uncovered(text: &str) -> Result<Vec<char>, Error> {
         }
     }
     Ok(missing)
+}
+
+/// Text widths from Liberation Sans, which has Arial's.
+pub struct Widths(Vec<u8>);
+
+impl Widths {
+    pub fn load() -> Result<Self, Error> {
+        let file = &fonts()?[0];
+        let unreadable = |e: &dyn std::fmt::Display| {
+            Error::internal(&format!("can't read the font {}: {e}", file.display()))
+        };
+        let data = fs::read(file).map_err(|e| unreadable(&e))?;
+        FontRef::new(&data).map_err(|e| unreadable(&e))?;
+        Ok(Self(data))
+    }
+
+    /// The advance width of `text` at `size` px; a character the font lacks counts as 1 em.
+    pub fn of(&self, text: &str, size: f64) -> f64 {
+        let font = FontRef::new(&self.0).expect("checked when loaded");
+        let (charmap, metrics) = (
+            font.charmap(),
+            font.glyph_metrics(Size::new(size as f32), LocationRef::default()),
+        );
+        let advance = |c| charmap.map(c).and_then(|g| metrics.advance_width(g));
+        text.chars()
+            .map(|c| advance(c).map_or(size, f64::from))
+            .sum()
+    }
 }
 
 /// Paints `svg` at `scale` PNG pixels per CSS pixel. A family that isn't anywhere is drawn with

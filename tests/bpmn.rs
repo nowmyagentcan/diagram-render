@@ -321,3 +321,82 @@ fn every_fixture_renders_to_svg_and_png_at_the_svg_size() {
         }
     }
 }
+
+/// The `fixture` rendered to SVG with `args`.
+fn svg_of(file: &str, args: &[&str]) -> String {
+    let dir = folder(&format!("bpmn-svg-{}", file.replace('.', "-")));
+    let source = fs::read(fixture(file)).unwrap();
+    let (code, v) = in_dir(&dir, file, &source, &[&["-o", "out.svg"], args].concat());
+    assert_eq!(code, 0, "{v}");
+    fs::read_to_string(dir.join("out.svg")).unwrap()
+}
+
+#[test]
+fn labels_are_laid_out_as_bpmn_js_lays_them_out() {
+    let svg = svg_of("activities.bpmn", &[]);
+    // Centred in the box less 7 px padding, with Arial's widths; the first baseline is 3/4 of a
+    // 1.2 line height below the top of the text.
+    assert!(
+        svg.contains(r#"<tspan x="183.99" y="123.6">Plain task</tspan>"#),
+        "{svg}"
+    );
+    assert!(svg.contains(">Approve the</tspan><tspan"), "{svg}");
+    assert!(svg.contains(">Repeated sub-</tspan><tspan"), "{svg}");
+    // An outside label wraps within its bounds, which grow to hold it, and frame the drawing.
+    let svg = svg_of("pages.bpmn", &["--page", "2"]);
+    assert!(svg.contains(r#"viewBox="130 75 456 102""#), "{svg}");
+    assert!(svg.contains(">Order</tspan><tspan"), "{svg}");
+}
+
+#[test]
+fn pools_and_lanes_show_their_names_in_their_headers() {
+    let svg = svg_of("collaboration.bpmn", &[]);
+    let text = |name: &str| {
+        let end = svg.find(&format!(">{name}</tspan>")).unwrap();
+        svg[..end].rsplit("<text").next().unwrap().to_string()
+    };
+    assert!(text("Sales").contains("rotate(-90)"), "{svg}");
+    assert!(text("Shop").contains("rotate(-90)"));
+    // A collapsed pool's name lies across its middle.
+    assert!(!text("Customers").contains("rotate"));
+    let svg = svg_of("vertical.bpmn", &[]);
+    assert!(!svg.contains("rotate"), "{svg}");
+}
+
+#[test]
+fn colours_from_either_extension_replace_bpmn_js_ink() {
+    let svg = svg_of("colors.bpmn", &[]);
+    for want in [
+        r##"fill="#bbdefb" stroke="#0d4372""##,
+        r##"fill="#e1bee7" stroke="#5b2a6e""##,
+        r##"fill="#205022">"##,
+        r##"stroke="#6b3c00""##,
+    ] {
+        assert!(svg.contains(want), "{want}: {svg}");
+    }
+    let plain = svg_of("pages.bpmn", &[]);
+    assert!(plain.contains(r##"fill="white" stroke="#22242a""##));
+}
+
+#[test]
+fn unknown_elements_are_drawn_as_named_boxes() {
+    let source = process(
+        r#"
+      <bpmndi:BPMNShape id="w_di" bpmnElement="w">
+        <dc:Bounds x="350" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>"#,
+    )
+    .replace(
+        r#"<endEvent id="e" />"#,
+        r#"<endEvent id="e" /><choreographyTask id="w" name="Widget" />"#,
+    );
+    let dir = folder("bpmn-unknown");
+    let (code, v) = in_dir(&dir, "u.bpmn", source.as_bytes(), &[]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        v["warnings"],
+        json!([{"code": "element_approximated", "message": "Drew 1 BPMN elements as plain boxes: choreographyTask."}])
+    );
+    let svg = fs::read_to_string(dir.join("u.svg")).unwrap();
+    assert!(svg.contains(">Widget</tspan>"), "{svg}");
+}

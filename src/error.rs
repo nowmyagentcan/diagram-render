@@ -153,6 +153,17 @@ impl Warning {
         }
     }
 
+    pub fn element_approximated(n: usize, types: &[&str]) -> Self {
+        Self {
+            code: "element_approximated",
+            message: format!(
+                "Drew {n} BPMN elements as plain boxes: {}.",
+                types.join(", ")
+            ),
+            line: None,
+        }
+    }
+
     /// `element_skipped` or `edge_skipped`: `kind` is what the item is, such as `edge`.
     pub fn skipped(code: &'static str, kind: &str, id: &str, reason: &str, line: usize) -> Self {
         Self {

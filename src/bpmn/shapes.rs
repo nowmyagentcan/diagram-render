@@ -157,11 +157,11 @@ fn task_icon(out: &mut String, kind: &str, p: &Paint) {
             circle_with(
                 out,
                 (14.0, 14.0),
-                6.0,
-                &format!(r#"{} stroke-dasharray="2.36 2.36""#, style("none", s, 3.0)),
+                6.6,
+                &format!(r#"{} stroke-dasharray="2.6 2.6""#, style("none", s, 2.4)),
             );
-            circle(out, (14.0, 14.0), 4.6, f, s, 1.0);
-            circle(out, (14.0, 14.0), 1.8, f, s, 1.0);
+            circle(out, (14.0, 14.0), 5.2, f, s, 1.0);
+            circle(out, (14.0, 14.0), 2.2, f, s, 1.0);
         }
         "scriptTask" => {
             let scroll =
@@ -195,10 +195,13 @@ fn task_icon(out: &mut String, kind: &str, p: &Paint) {
     }
 }
 
-/// The markers along the bottom of an activity: loop or multi-instance, compensation, the
+/// The markers along the bottom of an activity: compensation, loop or multi-instance, the
 /// collapsed sub-process's plus and the ad-hoc tilde, side by side in the middle.
 fn markers(out: &mut String, el: Node, b: Rect, p: &Paint, collapsed: bool) {
     let mut list = vec![];
+    if el.attribute("isForCompensation") == Some("true") {
+        list.push("compensation");
+    }
     if let Some(l) = el.children().find(|c| {
         c.tag_name().namespace() == Some(MODEL)
             && c.tag_name().name().ends_with("LoopCharacteristics")
@@ -208,9 +211,6 @@ fn markers(out: &mut String, el: Node, b: Rect, p: &Paint, collapsed: bool) {
             _ if l.attribute("isSequential") == Some("true") => "sequential",
             _ => "parallel",
         });
-    }
-    if el.attribute("isForCompensation") == Some("true") {
-        list.push("compensation");
     }
     if collapsed {
         list.push("plus");
@@ -434,13 +434,13 @@ fn gateway(out: &mut String, el: Node, di: Node, b: Rect, p: &Paint) {
     let s = p.stroke;
     match el.tag_name().name() {
         "exclusiveGateway" if di.attribute("isMarkerVisible") == Some("true") => {
-            path(out, "M17.5 17.5l15 15M32.5 17.5l-15 15", "none", s, 4.0, "");
+            path(out, "M17.5 17.5l15 15M32.5 17.5l-15 15", "none", s, 4.5, "");
         }
-        "parallelGateway" => path(out, "M25 12.5v25M12.5 25h25", "none", s, 4.0, ""),
+        "parallelGateway" => path(out, "M25 12.5v25M12.5 25h25", "none", s, 5.5, ""),
         "inclusiveGateway" => circle(out, (25.0, 25.0), 11.5, "none", s, 2.5),
         "complexGateway" => {
             let star = "M25 13v24M13 25h24M16.5 16.5l17 17M33.5 16.5l-17 17";
-            path(out, star, "none", s, 3.0, "");
+            path(out, star, "none", s, 4.0, "");
         }
         "eventBasedGateway" => {
             circle(out, (25.0, 25.0), 12.5, "none", s, 1.0);
@@ -507,4 +507,165 @@ fn data_store(out: &mut String, b: Rect, p: &Paint) {
         );
     }
     path(out, &rims, "none", p.stroke, 2.0, "");
+}
+
+/// A pool or a lane: its box, and for an expanded pool the line under its name and the
+/// multiplicity marker.
+pub fn swimlane(out: &mut String, el: Node, b: Rect, p: &Paint, expanded: bool, across: bool) {
+    let lane = el.tag_name().name() == "lane";
+    let faint = if lane { r#" fill-opacity="0.25""# } else { "" };
+    rect(out, b, 0.0, p.fill, p.stroke, 1.5, faint);
+    if !lane && expanded {
+        let header = match across {
+            true => format!("M{} {}V{}", n(b.x + 30.0), n(b.y), n(b.y + b.h)),
+            false => format!("M{} {}H{}", n(b.x), n(b.y + 30.0), n(b.x + b.w)),
+        };
+        path(out, &header, "none", p.stroke, 1.5, "");
+    }
+    if el
+        .children()
+        .any(|c| c.tag_name().name() == "participantMultiplicity")
+    {
+        let (x, y) = (b.x + b.w / 2.0 - 4.0, b.y + b.h - 12.0);
+        let bars = format!("M{} {}v9m3.5-9v9m3.5-9v9", n(x + 0.5), n(y));
+        path(out, &bars, "none", p.stroke, 2.0, "");
+    }
+}
+
+/// A text annotation's open bracket.
+pub fn annotation(out: &mut String, b: Rect, p: &Paint) {
+    let d = format!(
+        "M{} {}H{}V{}H{}",
+        n(b.x + 10.0),
+        n(b.y),
+        n(b.x),
+        n(b.y + b.h),
+        n(b.x + 10.0)
+    );
+    path(out, &d, "none", p.stroke, 2.0, "");
+}
+
+/// A group's dash-dotted box.
+pub fn group(out: &mut String, b: Rect, p: &Paint) {
+    let dash = r#" stroke-dasharray="9 6 0.1 6""#;
+    rect(out, b, 10.0, "none", p.stroke, 1.5, dash);
+}
+
+/// Draws an edge of the model element `el` along `points`. `false` when its type isn't one
+/// drawn here.
+pub fn edge(
+    out: &mut String,
+    model: &HashMap<&str, Node>,
+    el: Node,
+    points: &[(f64, f64)],
+    p: &Paint,
+) -> bool {
+    let line = super::path(points);
+    let (start, end) = (ends(points, false), ends(points, true));
+    let s = p.stroke;
+    match el.tag_name().name() {
+        "sequenceFlow" => {
+            path(out, &format!("M{line}"), "none", s, 2.0, "");
+            path(out, &head(end, 10.0, 5.0, true), s, s, 1.0, "");
+            let source = el.attribute("sourceRef").and_then(|r| model.get(r));
+            let activity = source.is_some_and(|n| is_activity(n.tag_name().name()));
+            let gateway = source.is_some_and(|n| n.tag_name().name().ends_with("Gateway"));
+            let conditional = el
+                .children()
+                .any(|c| c.tag_name().name() == "conditionExpression");
+            if conditional && activity {
+                path(out, &diamond(start), p.fill, s, 1.0, "");
+            }
+            if (activity || gateway)
+                && source.and_then(|n| n.attribute("default")) == el.attribute("id")
+            {
+                let ((x, y), (dx, dy)) = inward(start);
+                let at = |along: f64, side: f64| {
+                    (x + dx * along - dy * side, y + dy * along + dx * side)
+                };
+                let ((x0, y0), (x1, y1)) = (at(6.0, -6.0), at(10.0, 6.0));
+                let slash = format!("M{} {}L{} {}", n(x0), n(y0), n(x1), n(y1));
+                path(out, &slash, "none", s, 2.0, "");
+            }
+        }
+        "messageFlow" => {
+            let dash = r#" stroke-dasharray="10 11""#;
+            path(out, &format!("M{line}"), "none", s, 1.5, dash);
+            circle(out, start.0, 5.25, p.fill, s, 1.5);
+            let ((x, y), (dx, dy)) = end;
+            let tip = ((x - dx * 0.75, y - dy * 0.75), (dx, dy));
+            path(out, &head(tip, 10.5, 4.5, true), p.fill, s, 1.5, "");
+        }
+        kind @ ("association" | "dataInputAssociation" | "dataOutputAssociation") => {
+            let dots = r#" stroke-dasharray="0.1 5""#;
+            path(out, &format!("M{line}"), "none", s, 2.0, dots);
+            let direction = el.attribute("associationDirection");
+            if kind != "association" || matches!(direction, Some("One" | "Both")) {
+                path(out, &head(end, 10.0, 5.0, false), "none", s, 1.5, "");
+            }
+            if direction == Some("Both") {
+                path(out, &head(start, 10.0, 5.0, false), "none", s, 1.5, "");
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+pub fn is_activity(kind: &str) -> bool {
+    kind == "task"
+        || kind.ends_with("Task")
+        || matches!(
+            kind,
+            "subProcess" | "adHocSubProcess" | "transaction" | "callActivity"
+        )
+}
+
+/// An end of an edge, and the unit direction out of the edge there.
+fn ends(points: &[(f64, f64)], last: bool) -> ((f64, f64), (f64, f64)) {
+    let ordered: Vec<(f64, f64)> = match last {
+        true => points.iter().rev().copied().collect(),
+        false => points.to_vec(),
+    };
+    let tip = ordered[0];
+    let away = ordered[1..].iter().find(|&&(x, y)| (x, y) != tip).copied();
+    let (fx, fy) = away.unwrap_or((tip.0 - 1.0, tip.1));
+    let len = (tip.0 - fx).hypot(tip.1 - fy);
+    (tip, ((tip.0 - fx) / len, (tip.1 - fy) / len))
+}
+
+/// An end with its direction turned into the edge.
+fn inward((tip, (dx, dy)): ((f64, f64), (f64, f64))) -> ((f64, f64), (f64, f64)) {
+    (tip, (-dx, -dy))
+}
+
+/// An arrowhead with its tip at the end's point, `length` back along the edge and `half` to each
+/// side; closed (to fill) or as two strokes.
+fn head(
+    ((x, y), (dx, dy)): ((f64, f64), (f64, f64)),
+    length: f64,
+    half: f64,
+    closed: bool,
+) -> String {
+    let (bx, by) = (x - dx * length, y - dy * length);
+    let (lx, ly, rx, ry) = (
+        bx - dy * half,
+        by + dx * half,
+        bx + dy * half,
+        by - dx * half,
+    );
+    let d = format!("M{} {}L{} {}L{} {}", n(lx), n(ly), n(x), n(y), n(rx), n(ry));
+    if closed { d + "z" } else { d }
+}
+
+/// The open diamond a conditional flow from an activity starts with.
+fn diamond(start: ((f64, f64), (f64, f64))) -> String {
+    let ((x, y), (dx, dy)) = inward(start);
+    let at = |along: f64, side: f64| (x + dx * along - dy * side, y + dy * along + dx * side);
+    let corners = [at(1.0, 0.0), at(9.0, -4.0), at(17.0, 0.0), at(9.0, 4.0)];
+    let mut d = String::new();
+    for (i, (cx, cy)) in corners.iter().enumerate() {
+        let _ = write!(d, "{}{} {}", if i == 0 { "M" } else { "L" }, n(*cx), n(*cy));
+    }
+    d + "z"
 }
