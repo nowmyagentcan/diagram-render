@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Render a diagram</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='57' fill='%237c3aed'/%3E%3Cpath transform='translate(48 48) scale(0.625)' fill='%23fff' d='M248.49,71.51l-32-32a12,12,0,0,0-17,17L211,68h-3c-52,0-64.8,30.71-75.08,55.38-8.82,21.17-15.45,37.05-42.75,40.09a44,44,0,1,0,.28,24.08c43.34-3.87,55.07-32,64.63-54.93C164.9,109,172,92,208,92h3l-11.52,11.51a12,12,0,0,0,17,17l32-32A12,12,0,0,0,248.49,71.51ZM48,196a20,20,0,1,1,20-20A20,20,0,0,1,48,196Z'/%3E%3C/svg%3E">
+<style>
+:root { --bg:#fafaf9; --fg:#1c1b1a; --muted:#6b6966; --line:#e7e5e2; --field:#f2f1ef; --accent:#0f7b4a; --danger:#b42318; --r:8px; }
+@media (prefers-color-scheme: dark) { :root { --bg:#121110; --fg:#ecebe9; --muted:#9a9894; --line:#2a2826; --field:#1b1a19; --accent:#5fd38d; --danger:#f97066; } }
+:root { --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace; --paper:#fafaf9; --paper-line:#e7e5e2; color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+main { max-width: 672px; margin: 0 auto; padding: 16px 16px 0; }
+h1 { font-size: 18px; font-weight: 600; text-align: center; margin: 0 0 4px; text-wrap: balance; }
+.visual { display: block; margin: 0 auto 8px; color: var(--muted); }
+.i { width: 18px; height: 18px; fill: currentColor; flex: none; }
+.top { display: flex; justify-content: space-between; align-items: end; margin-bottom: 6px; }
+.field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+textarea, select, input[type=number] { font: inherit; font-size: 15px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); padding: 7px 10px; width: 100%; }
+textarea { display: block; font: 14px/1.45 var(--mono); padding: 10px 12px; resize: vertical; tab-size: 4; }
+textarea::placeholder { color: var(--muted); }
+.drop { outline: 2px dashed var(--accent); outline-offset: 2px; }
+.chip { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; margin-bottom: 6px; padding: 4px 4px 4px 10px; background: var(--field); border: 1px solid var(--line); border-radius: var(--r); font: 13px var(--mono); }
+.chip span { overflow-wrap: anywhere; }
+.chip.big { width: 100%; height: 124px; justify-content: center; margin: 0; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.row3 { grid-template-columns: 1fr 1fr 1fr; }
+details { margin-top: 10px; }
+summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--muted); list-style: none; border-radius: var(--r); }
+summary::-webkit-details-marker { display: none; }
+summary .i { width: 14px; height: 14px; transition: transform .15s; }
+details[open] summary .i { transform: rotate(90deg); }
+.check { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 15px; color: var(--fg); }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+input:disabled { opacity: .55; color: var(--fg); }
+button, .btn { font: inherit; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); padding: 5px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+button:active, .btn:active { transform: translateY(1px); }
+.quiet { background: none; border: 0; padding: 2px 4px; color: var(--muted); font-size: 13px; }
+.quiet:hover { color: var(--fg); }
+.chip button { padding: 2px; border: 0; background: none; color: var(--muted); }
+.go { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 12px; }
+.go .primary { grid-column: 2; background: var(--accent); color: var(--bg); border: 0; padding: 9px 30px; font-weight: 600; }
+.go span { font-size: 13px; color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#out { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; overflow-wrap: anywhere; }
+#out p { margin: 0; }
+.muted { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chips button { font: 13px var(--mono); }
+.bar { height: 3px; margin: 2px 0 10px; overflow: hidden; border-radius: 2px; }
+.bar::after { content: ""; display: block; width: 30%; height: 100%; background: var(--accent); animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .bar::after { width: 100%; animation: none; } summary .i { transition: none; } }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.meta { font-size: 14px; font-variant-numeric: tabular-nums; }
+.acts { display: flex; gap: 8px; }
+.warns { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.warns:empty { display: none; }
+.warns li { display: flex; gap: 8px; }
+.warns .i { margin-top: 2px; }
+.paper { margin-top: 12px; padding: 16px; background: var(--paper); border: 1px solid var(--paper-line); border-radius: var(--r); display: grid; place-items: center; }
+.paper img { display: block; max-width: 100%; max-height: 60vh; height: auto; object-fit: contain; }
+.err .msg { display: flex; gap: 8px; color: var(--danger); font-weight: 600; }
+.err .msg .i { margin-top: 2px; }
+.loc { padding: 0; border: 0; background: none; color: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.err pre { margin: 8px 0 0 26px; padding: 8px 10px; background: var(--field); border-radius: var(--r); font: 13px/1.45 var(--mono); overflow-x: auto; }
+#out .hint { margin: 8px 0 0 26px; }
+code { font: 13px var(--mono); background: var(--field); padding: 1px 4px; border-radius: 4px; }
+footer { display: flex; justify-content: center; align-items: center; gap: 16px; padding: 14px 16px 12px; font-size: 13px; color: var(--muted); }
+footer a { color: inherit; display: inline-flex; border-radius: 4px; }
+footer a:hover { color: var(--fg); }
+[hidden] { display: none !important; }
+@media (max-width: 520px) { .row, .row3 { grid-template-columns: 1fr; } .head { display: grid; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Render Mermaid, DOT, D2, BPMN, draw.io and Excalidraw diagrams.</h1>
+<svg class="visual" viewBox="0 0 220 64" height="64" fill="currentColor" role="img" aria-label="Diagram source becomes a picture">
+<rect x="1" y="15" width="94" height="34" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+<text x="48" y="37" text-anchor="middle" font-family="ui-monospace, Consolas, monospace" font-size="15">a -&gt; b</text>
+<path transform="translate(111 16) scale(.125)" d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/>
+<path transform="translate(164 8) scale(.1875)" d="M200,152a31.84,31.84,0,0,0-19.53,6.68l-23.11-18A31.65,31.65,0,0,0,160,128c0-.74,0-1.48-.08-2.21l13.23-4.41A32,32,0,1,0,168,104c0,.74,0,1.48.08,2.21l-13.23,4.41A32,32,0,0,0,128,96a32.59,32.59,0,0,0-5.27.44L115.89,81A32,32,0,1,0,96,88a32.59,32.59,0,0,0,5.27-.44l6.84,15.4a31.92,31.92,0,0,0-8.57,39.64L73.83,165.44a32.06,32.06,0,1,0,10.63,12l25.71-22.84a31.91,31.91,0,0,0,37.36-1.24l23.11,18A31.65,31.65,0,0,0,168,184a32,32,0,1,0,32-32Zm0-64a16,16,0,1,1-16,16A16,16,0,0,1,200,88ZM80,56A16,16,0,1,1,96,72,16,16,0,0,1,80,56ZM56,208a16,16,0,1,1,16-16A16,16,0,0,1,56,208Zm56-80a16,16,0,1,1,16,16A16,16,0,0,1,112,128Zm88,72a16,16,0,1,1,16-16A16,16,0,0,1,200,200Z"/>
+</svg>
+<form id="form" novalidate>
+<div class="top">
+<label class="field" for="src">Diagram</label>
+<button type="button" class="quiet" id="open" aria-keyshortcuts="Control+O"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M245,110.64A16,16,0,0,0,232,104H216V88a16,16,0,0,0-16-16H130.67L102.94,51.2a16.14,16.14,0,0,0-9.6-3.2H40A16,16,0,0,0,24,64V208h0a8,8,0,0,0,8,8H211.1a8,8,0,0,0,7.59-5.47l28.49-85.47A16.05,16.05,0,0,0,245,110.64ZM93.34,64,123.2,86.4A8,8,0,0,0,128,88h72v16H69.77a16,16,0,0,0-15.18,10.94L40,158.7V64Zm112,136H43.1l26.67-80H232Z"/></svg>Open file</button>
+</div>
+<div class="chip" id="chip" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Z"/></svg><span id="chipname"></span><button type="button" id="unchip"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg></button></div>
+<textarea id="src" rows="5" placeholder="Paste diagram source, or drop a file here" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" autofocus></textarea>
+<input type="file" id="picker" hidden>
+<div class="row">
+<label class="field">Format<select id="format"><option value="auto">Auto</option><option value="mermaid">Mermaid</option><option value="dot">Graphviz DOT</option><option value="d2">D2</option><option value="bpmn">BPMN</option><option value="drawio">draw.io</option><option value="excalidraw">Excalidraw</option></select></label>
+<label class="field">Output<select id="to"><option value="svg">SVG</option><option value="png">PNG</option></select></label>
+</div>
+<details id="opts">
+<summary><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></svg>Options</summary>
+<div class="row row3">
+<label class="field">Scale<input type="number" id="scale" value="2" min="0.1" max="8" step="any" disabled></label>
+<label class="field">Background<select id="bg"><option value="auto">Auto</option><option value="white">White</option><option value="transparent">Transparent</option></select></label>
+<label class="field" id="pagebox" hidden>Page<select id="page"></select></label>
+</div>
+<label class="check"><input type="checkbox" id="net">Fetch remote images (D2)</label>
+</details>
+<div class="go"><button class="primary" id="run" aria-keyshortcuts="Control+Enter">Render</button><span id="keys">Ctrl+Enter</span></div>
+</form>
+<section id="out" aria-live="polite"></section>
+</main>
+<footer>
+<a href="https://nowmyagentcan.com">nowmyagentcan.com</a>
+<a href="https://github.com/nowmyagentcan/diagram-render" aria-label="diagram-render on GitHub"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z"/></svg></a>
+<a href="https://x.com/chayp05" aria-label="nowmyagentcan on X"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M214.75,211.71l-62.6-98.38,61.77-67.95a8,8,0,0,0-11.84-10.76L143.24,99.34,102.75,35.71A8,8,0,0,0,96,32H48a8,8,0,0,0-6.75,12.3l62.6,98.37-61.77,68a8,8,0,1,0,11.84,10.76l58.84-64.72,40.49,63.63A8,8,0,0,0,160,224h48a8,8,0,0,0,6.75-12.29ZM164.39,208,62.57,48h29L193.43,208Z"/></svg></a>
+</footer>
+<script>
+const $ = id => document.getElementById(id);
+const [form, src, chip, chipname, unchip, picker, format, to, opts, scale, bg, pagebox, page, net, out] =
+  ["form", "src", "chip", "chipname", "unchip", "picker", "format", "to", "opts", "scale", "bg", "pagebox", "page", "net", "out"].map($);
+const ICON = { copy: "M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z", save: "M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z", warning: "M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z", error: "M165.66,101.66,139.31,128l26.35,26.34a8,8,0,0,1-11.32,11.32L128,139.31l-26.34,26.35a8,8,0,0,1-11.32-11.32L116.69,128,90.34,101.66a8,8,0,0,1,11.32-11.32L128,116.69l26.34-26.35a8,8,0,0,1,11.32,11.32ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z" };
+const SAMPLES = [
+  ["Mermaid", "flowchart LR\n  A[Write] --> B{Valid?}\n  B -- yes --> C[Render]\n  B -- no --> A\n"],
+  ["Graphviz DOT", "digraph {\n  rankdir=LR\n  node [shape=box style=rounded fontname=Helvetica]\n  source -> check -> render\n  check -> source [label=fix]\n}\n"],
+  ["D2", "page -> server: POST /api/render\nserver -> engine: source\nengine -> server: svg\n"],
+];
+let file = null, seq = 0, url = null;
+
+// Sample answers until the server exists: an empty body, a line ending in "--", a plain .png, sfdp and draw.io pages.
+const SAMPLE_SVG = `<svg width="265pt" height="46pt"
+ viewBox="0.00 0.00 265.00 46.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 42.3)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-42.3 261.04,-42.3 261.04,4 -4,4"/>
+
+<g id="node1" class="node">
+<title>source</title>
+<path fill="none" stroke="black" d="M46.02,-38.3C46.02,-38.3 12,-38.3 12,-38.3 6,-38.3 0,-32.3 0,-26.3 0,-26.3 0,-14.3 0,-14.3 0,-8.3 6,-2.3 12,-2.3 12,-2.3 46.02,-2.3 46.02,-2.3 52.02,-2.3 58.02,-8.3 58.02,-14.3 58.02,-14.3 58.02,-26.3 58.02,-26.3 58.02,-32.3 52.02,-38.3 46.02,-38.3"/>
+<text xml:space="preserve" text-anchor="middle" x="29.01" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">source</text>
+</g>
+
+<g id="node2" class="node">
+<title>check</title>
+<path fill="none" stroke="black" d="M151.57,-38.3C151.57,-38.3 121.57,-38.3 121.57,-38.3 115.57,-38.3 109.57,-32.3 109.57,-26.3 109.57,-26.3 109.57,-14.3 109.57,-14.3 109.57,-8.3 115.57,-2.3 121.57,-2.3 121.57,-2.3 151.57,-2.3 151.57,-2.3 157.57,-2.3 163.57,-8.3 163.57,-14.3 163.57,-14.3 163.57,-26.3 163.57,-26.3 163.57,-32.3 157.57,-38.3 151.57,-38.3"/>
+<text xml:space="preserve" text-anchor="middle" x="136.57" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">check</text>
+</g>
+
+<g id="edge1" class="edge">
+<title>source&#45;&gt;check</title>
+<path fill="none" stroke="black" d="M58.51,-21.88C68.91,-22.29 80.77,-22.55 91.57,-22.3 93.75,-22.25 95.99,-22.19 98.25,-22.12"/>
+<polygon fill="black" stroke="black" points="98.15,-25.62 108.01,-21.74 97.88,-18.63 98.15,-25.62"/>
+</g>
+
+<g id="edge3" class="edge">
+<title>check&#45;&gt;source</title>
+<path fill="none" stroke="black" d="M109.14,-6.99C103.48,-4.71 97.43,-2.7 91.57,-1.5 84.23,0 76.51,-0.57 69.11,-2.24"/>
+<polygon fill="black" stroke="black" points="68.26,1.16 59.68,-5.05 70.26,-5.55 68.26,1.16"/>
+<text xml:space="preserve" text-anchor="middle" x="83.8" y="-5.7" font-family="Times New Roman,serif" font-size="14.00">fix</text>
+</g>
+
+<g id="node3" class="node">
+<title>render</title>
+<path fill="none" stroke="black" d="M245.04,-38.3C245.04,-38.3 212.57,-38.3 212.57,-38.3 206.57,-38.3 200.57,-32.3 200.57,-26.3 200.57,-26.3 200.57,-14.3 200.57,-14.3 200.57,-8.3 206.57,-2.3 212.57,-2.3 212.57,-2.3 245.04,-2.3 245.04,-2.3 251.04,-2.3 257.04,-8.3 257.04,-14.3 257.04,-14.3 257.04,-26.3 257.04,-26.3 257.04,-32.3 251.04,-38.3 245.04,-38.3"/>
+<text xml:space="preserve" text-anchor="middle" x="228.81" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">render</text>
+</g>
+
+<g id="edge2" class="edge">
+<title>check&#45;&gt;render</title>
+<path fill="none" stroke="black" d="M163.67,-20.3C171.54,-20.3 180.36,-20.3 188.88,-20.3"/>
+<polygon fill="black" stroke="black" points="188.68,-23.8 198.68,-20.3 188.68,-16.8 188.68,-23.8"/>
+</g>
+</g>
+</svg>`;
+async function render(body, name, options) {
+  await new Promise(r => setTimeout(r, 400));
+  const text = typeof body === "string" ? body : "", lines = text.split(/\r\n|\r|\n/);
+  const fail = (code, message, hint, line = null, column = null, excerpt = null) => ({ error: { code, message, hint, line, column, excerpt } });
+  if (/\.png$/i.test(name) && !/\.(drawio|excalidraw)\.png$/i.test(name)) return fail("unsupported_input", `${name} is an image with no draw.io or Excalidraw diagram inside.`, "Nothing to render; it's already an image.");
+  if (typeof body === "string" && !text.trim()) return fail("empty_input", "The diagram is empty.", "Write some diagram source, or check the file.");
+  const bad = lines.findIndex(l => /\S\s*--\s*$/.test(l));
+  if (bad >= 0) return fail("syntax_error", "Expecting 'SEMI', 'NEWLINE', 'SPACE', got 'EOF'", `Fix line ${bad + 1}, then run again.`, bad + 1, lines[bad].lastIndexOf("--") + 1, lines[bad]);
+  if (options.scale != null && !(options.scale >= 0.1 && options.scale <= 8)) return { error: { code: "invalid_option", message: "--scale must be between 0.1 and 8.", hint: "Try --scale 2." } };
+  const warnings = /layout\s*=\s*"?sfdp/.test(text) ? [{ code: "engine_warning", message: "Graphviz: sfdp laid this out without removing node overlaps (this build has no triangulation library), so nodes may overlap.", line: null }] : [];
+  const pages = /\.drawio$/i.test(name) || text.includes("<mxfile") ? ["Page-1", "Overview", "Network"].map((n, i) => ({ index: i + 1, name: n })) : [];
+  const pg = pages.length ? pages[(+options.page || 1) - 1] : null;
+  const stem = (name.replace(/(\.(drawio|excalidraw))?\.[^.]+$/i, "") || "diagram") + (pg && pg.index > 1 ? `-${pg.name}` : "");
+  const png = options.to === "png", s = png ? options.scale ?? 2 : null;
+  let blob = new Blob([SAMPLE_SVG], { type: "image/svg+xml" }), width = 354, height = 62;
+  if (png) {
+    const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
+    const c = new OffscreenCanvas(width *= s, height *= s); c.getContext("2d").drawImage(img, 0, 0, width, height);
+    URL.revokeObjectURL(img.src); blob = await c.convertToBlob();
+  }
+  return { blob, result: { input: name || "-", output: `${stem}.${options.to}`, to: options.to, width, height, bytes: blob.size, scale: s, page: pg, pages, warnings, elapsed_ms: 213 } };
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function icon(d) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS(s.namespaceURI, "path");
+  s.setAttribute("viewBox", "0 0 256 256"); s.setAttribute("class", "i"); s.setAttribute("aria-hidden", "true");
+  p.setAttribute("d", d); s.append(p);
+  return s;
+}
+const size = b => b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+const secs = ms => (ms / 1000).toFixed(ms < 10000 ? 2 : 1);
+
+async function run() {
+  const my = ++seq, options = { to: to.value };
+  if (format.value !== "auto") options.format = format.value;
+  if (to.value === "png" && +scale.value !== 2) options.scale = +scale.value;
+  if (bg.value !== "auto") options.background = bg.value;
+  if (!pagebox.hidden && page.value !== "1") options.page = page.value;
+  if (net.checked) options.allow_network = true;
+  const wait = setTimeout(() => my === seq && running(), 150);
+  let res;
+  try { res = await render(file?.binary ? file.blob : src.value, file?.name ?? "", options); }
+  catch { res = { error: { message: "Can't reach diagram-render.", hint: "Start it again with: diagram-render ui" } }; }
+  clearTimeout(wait);
+  if (my !== seq) return;
+  out.removeAttribute("aria-busy");
+  res.error ? failed(res.error) : done(res);
+}
+
+function empty() {
+  const chips = el("div", "chips");
+  for (const [label, text] of SAMPLES) {
+    const b = el("button", null, label);
+    b.type = "button";
+    b.onclick = () => { forget(); src.value = text; format.value = "auto"; run(); };
+    chips.append(b);
+  }
+  chips.prepend(el("p", "muted", "Paste or drop a diagram, or try one:"));
+  out.replaceChildren(chips);
+}
+function running() {
+  out.setAttribute("aria-busy", "true");
+  out.replaceChildren(el("div", "bar"), el("p", "muted", "Rendering…"));
+}
+function done({ blob, result: r }) {
+  if (url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(blob);
+  pagebox.hidden = r.pages.length < 2;
+  if (!pagebox.hidden) {
+    if (!page.options.length) opts.open = true;
+    page.replaceChildren(...r.pages.map(p => new Option(`${p.index}. ${p.name}`, p.index)));
+    page.value = r.page.index;
+  }
+  const copy = el("button"), save = el("a", "btn"), label = el("span", null, "Copy");
+  copy.type = "button"; copy.append(icon(ICON.copy), label);
+  copy.onclick = async () => {
+    try {
+      if (blob.type === "image/png") await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      else await navigator.clipboard.writeText(await blob.text());
+      label.textContent = "Copied";
+    } catch { label.textContent = "Can't copy"; }
+    setTimeout(() => label.textContent = "Copy", 1500);
+  };
+  save.href = url; save.download = r.output; save.append(icon(ICON.save), "Save");
+  const head = el("div", "head"), acts = el("div", "acts"), warns = el("ul", "warns");
+  acts.append(copy, save);
+  head.append(el("span", "meta", `${r.output} · ${r.width}×${r.height} · ${size(r.bytes)} · ${secs(r.elapsed_ms)} s`), acts);
+  for (const w of r.warnings) {
+    if (w.code === "pages_more") continue;
+    const li = el("li");
+    li.append(icon(ICON.warning), el("span", null, (w.line ? `Line ${w.line}: ` : "") + w.message));
+    warns.append(li);
+  }
+  const paper = el("div", "paper"), img = el("img");
+  img.src = url; img.alt = r.output;
+  img.width = r.scale ? r.width / r.scale : r.width; img.height = r.scale ? r.height / r.scale : r.height;
+  paper.append(img);
+  out.replaceChildren(head, warns, paper);
+}
+function failed(e) {
+  const msg = el("p", "msg"), text = el("span"), box = el("div", "err");
+  if (e.line) {
+    const at = `Line ${e.line}${e.column ? `, column ${e.column}` : ""}:`;
+    if (file?.binary) text.append(at);
+    else {
+      const b = el("button", "loc", at);
+      b.type = "button"; b.onclick = () => goTo(e.line, e.column);
+      text.append(b);
+    }
+    text.append(" ");
+  }
+  text.append(e.message);
+  msg.append(icon(ICON.error), text);
+  box.append(msg);
+  if (e.line && e.excerpt != null) {
+    const n = String(e.line), caret = e.column && !e.excerpt.startsWith("…") && [...e.excerpt].length >= e.column - 1;
+    box.append(el("pre", null, `${n} | ${e.excerpt}` + (caret ? `\n${" ".repeat(n.length)} | ${" ".repeat(e.column - 1)}^` : "")));
+  }
+  if (e.hint) {
+    const hint = el("p", "hint");
+    e.hint.split("`").forEach((part, i) => hint.append(i % 2 ? el("code", null, part) : part));
+    box.append(hint);
+  }
+  out.replaceChildren(box);
+}
+function goTo(line, column) {
+  const v = src.value, eol = /\r\n|\r|\n/g;
+  let start = 0;
+  for (let n = 1; n < line && eol.exec(v); n++) start = eol.lastIndex;
+  const pos = start + [...v.slice(start).split(/\r\n|\r|\n/)[0]].slice(0, (column || 1) - 1).join("").length;
+  src.focus(); src.setSelectionRange(pos, pos);
+}
+
+async function take(f) {
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  const enc = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le" : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+  let text = null;
+  if (!/\.png$/i.test(f.name)) try { text = new TextDecoder(enc, { fatal: true }).decode(bytes); } catch {}
+  file = { name: f.name, blob: f, binary: text == null };
+  chipname.textContent = file.binary ? `${f.name} · ${size(f.size)}` : f.name;
+  unchip.setAttribute("aria-label", `Remove ${f.name}`);
+  chip.hidden = false; chip.classList.toggle("big", file.binary); src.hidden = file.binary;
+  if (text != null) src.value = text;
+  page.replaceChildren(); pagebox.hidden = true;
+  run();
+}
+function forget() {
+  if (file?.binary) src.value = "";
+  file = null; chip.hidden = true; src.hidden = false;
+  page.replaceChildren(); pagebox.hidden = true;
+}
+
+form.onsubmit = e => { e.preventDefault(); run(); };
+$("open").onclick = () => picker.click();
+picker.onchange = () => { if (picker.files[0]) take(picker.files[0]); picker.value = ""; };
+unchip.onclick = () => { forget(); src.focus(); };
+to.onchange = () => scale.disabled = to.value === "svg";
+addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (e.key === "Enter") { e.preventDefault(); run(); }
+  else if (e.key.toLowerCase() === "o") { e.preventDefault(); picker.click(); }
+});
+const files = e => e.dataTransfer.types.includes("Files");
+addEventListener("dragover", e => { if (files(e)) { e.preventDefault(); src.classList.add("drop"); chip.classList.add("drop"); } });
+addEventListener("dragleave", e => { if (!e.relatedTarget) { src.classList.remove("drop"); chip.classList.remove("drop"); } });
+addEventListener("drop", e => {
+  if (!files(e)) return;
+  e.preventDefault(); src.classList.remove("drop"); chip.classList.remove("drop");
+  if (e.dataTransfer.files[0]) take(e.dataTransfer.files[0]);
+});
+if (/Mac|iPhone|iPad/.test(navigator.platform)) $("keys").textContent = "⌘+Enter";
+empty();
+</script>
+</body>
+</html>
