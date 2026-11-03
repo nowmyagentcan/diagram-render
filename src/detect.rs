@@ -150,8 +150,10 @@ pub fn detect(
         warnings: vec![],
     };
     if bytes.starts_with(PNG) && !named.is_some_and(Format::is_text) {
-        let format = named.or_else(|| embedded_in_png(bytes));
-        diagram.format = format.ok_or_else(|| Error::unsupported_image(shown))?;
+        let (format, text) = embedded_in_png(bytes, shown)?
+            .filter(|(f, _)| named.is_none_or(|n| n == *f))
+            .ok_or_else(|| Error::unsupported_image(shown))?;
+        (diagram.format, diagram.text) = (format, Some(text));
         return Ok(diagram);
     }
     let text = input::text(bytes)?;
@@ -202,25 +204,60 @@ pub fn stem(path: &Path) -> OsString {
     stem.as_os_str().to_owned()
 }
 
-/// The format a PNG's text chunks embed.
-fn embedded_in_png(bytes: &[u8]) -> Option<Format> {
+/// The diagram a PNG's text chunks embed: its format and the chunk's text, unpacked.
+fn embedded_in_png(bytes: &[u8], shown: &str) -> Result<Option<(Format, String)>, Error> {
     let mut at = PNG.len();
     while let Some(head) = bytes.get(at..at + 8) {
         let len = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as usize;
-        let data = bytes.get(at + 8..(at + 8).checked_add(len)?)?;
-        if matches!(&head[4..], b"tEXt" | b"zTXt" | b"iTXt") {
-            match data.split(|&b| b == 0).next() {
-                Some(b"mxfile" | b"mxGraphModel") => return Some(Format::Drawio),
-                Some(b"application/vnd.excalidraw+json") => return Some(Format::Excalidraw),
-                _ => {}
-            }
+        let Some(data) = (at + 8)
+            .checked_add(len)
+            .and_then(|end| bytes.get(at + 8..end))
+        else {
+            break;
+        };
+        let kind = &head[4..];
+        if matches!(kind, b"tEXt" | b"zTXt" | b"iTXt") {
+            let (key, rest) =
+                data.split_at(data.iter().position(|&b| b == 0).unwrap_or(data.len()));
+            let format = match key {
+                b"mxfile" | b"mxGraphModel" => Format::Drawio,
+                b"application/vnd.excalidraw+json" => Format::Excalidraw,
+                _ => {
+                    at += len + 12;
+                    continue;
+                }
+            };
+            let rest = rest.get(1..).unwrap_or_default();
+            let (packed, text) = match kind {
+                b"tEXt" => (false, rest),
+                b"zTXt" => (true, rest.get(1..).unwrap_or_default()),
+                // iTXt: compression flag and method, then language and translated keyword.
+                _ => {
+                    let packed = rest.first() == Some(&1);
+                    let mut parts = rest.get(2..).unwrap_or_default().splitn(3, |&b| b == 0);
+                    (packed, parts.nth(2).unwrap_or_default())
+                }
+            };
+            let text = match packed {
+                false if kind == b"tEXt" => text.iter().map(|&b| char::from(b)).collect(),
+                false => String::from_utf8_lossy(text).into_owned(),
+                true => match input::inflate(text, true) {
+                    Ok(Some(t)) => String::from_utf8_lossy(&t).into_owned(),
+                    Ok(None) => return Err(Error::too_large_unpacked(shown)),
+                    Err(e) => {
+                        let said = format!("the diagram in the PNG can't be unpacked: {e}");
+                        return Err(Error::syntax_error(&said, 1, None));
+                    }
+                },
+            };
+            return Ok(Some((format, text)));
         }
-        if &head[4..] == b"IEND" {
+        if kind == b"IEND" {
             break;
         }
         at += len + 12;
     }
-    None
+    Ok(None)
 }
 
 /// The format the content says; `None` when it says nothing, so it's read as D2.
@@ -664,13 +701,21 @@ mod tests {
             found(&png(b"mxfile")[..20]).unwrap_err().code,
             "unsupported_input"
         );
-        let named = detect(
-            Some(Path::new("x.drawio.png")),
-            "x.drawio.png",
-            &png(b"x"),
-            None,
-        );
-        assert!(named.unwrap().text.is_none());
+        // The chunk's text is the source; a named PNG without one is only an image.
+        let carried = detect(Some(Path::new("x.png")), "x.png", &png(b"mxfile"), None);
+        assert_eq!(carried.unwrap().text.as_deref(), Some("x"));
+        let named = |key: &[u8]| {
+            detect(
+                Some(Path::new("x.drawio.png")),
+                "x.drawio.png",
+                &png(key),
+                None,
+            )
+            .map(|d| d.format)
+        };
+        assert_eq!(named(b"x").unwrap_err().code, "unsupported_input");
+        let other = named(b"application/vnd.excalidraw+json").unwrap_err();
+        assert_eq!(other.code, "unsupported_input");
     }
 
     #[test]

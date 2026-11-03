@@ -44,6 +44,23 @@ fn limited(r: impl Read) -> io::Result<Option<Vec<u8>>> {
     Ok((bytes.len() as u64 <= LIMIT).then_some(bytes))
 }
 
+/// The most an embedded or compressed diagram may unpack to.
+pub const UNPACKED_LIMIT: u64 = 256 << 20;
+
+/// `data` unpacked from zlib, or from raw deflate; `None` past the limit.
+pub fn inflate(data: &[u8], zlib: bool) -> io::Result<Option<Vec<u8>>> {
+    let mut bytes = vec![];
+    match zlib {
+        true => flate2::read::ZlibDecoder::new(data)
+            .take(UNPACKED_LIMIT + 1)
+            .read_to_end(&mut bytes),
+        false => flate2::read::DeflateDecoder::new(data)
+            .take(UNPACKED_LIMIT + 1)
+            .read_to_end(&mut bytes),
+    }?;
+    Ok((bytes.len() as u64 <= UNPACKED_LIMIT).then_some(bytes))
+}
+
 /// `5.0 MiB`.
 pub fn mib(bytes: u64) -> String {
     format!("{:.1} MiB", bytes as f64 / (1 << 20) as f64)

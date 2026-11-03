@@ -11,6 +11,7 @@ use crate::engine::{Checked, Page, Rendered, Task};
 use crate::error::{Error, Warning};
 use crate::input::Lines;
 use crate::raster::Widths;
+use crate::svg::{escape, num as n};
 
 mod shapes;
 
@@ -152,6 +153,7 @@ pub fn render(task: &Task) -> Result<Rendered, Error> {
         page: Some(page),
         pages,
         diagram_type: Some(diagram_type),
+        removed: 0,
     })
 }
 
@@ -587,38 +589,9 @@ fn path(points: &[(f64, f64)]) -> String {
     all.join(" ")
 }
 
-/// A number with at most 2 decimals and no trailing zeros.
-fn n(v: f64) -> String {
-    format!("{}", (v * 100.0).round() / 100.0 + 0.0)
-}
-
-/// Text made safe inside an element or a quoted attribute.
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            c if c.is_control() => {}
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn numbers_keep_two_decimals() {
-        assert_eq!(n(12.0), "12");
-        assert_eq!(n(-0.001), "0");
-        assert_eq!(n(1.005_1), "1.01");
-        assert_eq!(n(-3.5), "-3.5");
-    }
 
     #[test]
     fn pages_are_found_by_number_name_or_id() {

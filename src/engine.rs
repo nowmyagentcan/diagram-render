@@ -14,7 +14,7 @@ use crate::error::{Error, Warning};
 use crate::input::Lines;
 use crate::output::To;
 use crate::raster::{self, Png};
-use crate::{bpmn, d2, dot, mermaid};
+use crate::{bpmn, d2, dot, drawio, mermaid};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -234,6 +234,8 @@ pub struct Rendered {
     pub page: Option<Page>,
     pub pages: Vec<Page>,
     pub diagram_type: Option<&'static str>,
+    /// Unsafe items a renderer of ours left out before writing the SVG.
+    pub removed: usize,
 }
 
 /// What a check found.
@@ -259,6 +261,7 @@ pub fn render(format: Format, engine: Option<&mut Engine>, task: &Task) -> Resul
         (Format::Dot, Some(engine)) => dot::render(engine, task),
         (Format::D2, Some(engine)) => d2::render(engine, task),
         (Format::Bpmn, _) => bpmn::render(task),
+        (Format::Drawio, _) => drawio::render(task),
         _ => Err(Error::internal("no renderer is built in yet")),
     }
 }
@@ -290,6 +293,7 @@ pub fn check(format: Format, engine: Option<&mut Engine>, task: &Task) -> Result
         (Format::Dot, Some(engine)) => dot::check(engine, task),
         (Format::D2, Some(engine)) => d2::check(engine, task),
         (Format::Bpmn, _) => bpmn::check(task),
+        (Format::Drawio, _) => drawio::check(task),
         _ => Err(Error::internal("no checker is built in yet")),
     }
 }

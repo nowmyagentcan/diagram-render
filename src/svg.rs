@@ -176,9 +176,38 @@ pub fn css_size(svg: &str) -> (f64, f64) {
     (side("width", 2), side("height", 3))
 }
 
+/// A number with at most 2 decimals and no trailing zeros.
+pub fn num(v: f64) -> String {
+    format!("{}", (v * 100.0).round() / 100.0 + 0.0)
+}
+
+/// Text made safe inside an element or a quoted attribute.
+pub fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbers_keep_two_decimals() {
+        assert_eq!(num(12.0), "12");
+        assert_eq!(num(-0.001), "0");
+        assert_eq!(num(1.005_1), "1.01");
+        assert_eq!(num(-3.5), "-3.5");
+    }
 
     #[test]
     fn sizes_come_from_width_and_height_else_the_view_box() {

@@ -164,6 +164,25 @@ impl Warning {
         }
     }
 
+    pub fn parent_missing(id: &str, parent: &str, line: usize) -> Self {
+        Self {
+            code: "parent_missing",
+            message: format!(
+                "Cell {id} points to a missing parent {parent}; drew it at the top level."
+            ),
+            line: Some(line),
+        }
+    }
+
+    /// `names`: up to 5 of the shapes, each once.
+    pub fn shape_approximated(n: usize, names: &[&str]) -> Self {
+        Self {
+            code: "shape_approximated",
+            message: format!("Drew {n} shapes as plain boxes: {}.", names.join(", ")),
+            line: None,
+        }
+    }
+
     /// `element_skipped` or `edge_skipped`: `kind` is what the item is, such as `edge`.
     pub fn skipped(code: &'static str, kind: &str, id: &str, reason: &str, line: usize) -> Self {
         Self {
@@ -290,6 +309,15 @@ impl Error {
         Self::new(
             "too_large",
             format!("{path} is {size}; the limit is 64 MiB (4 MiB for Mermaid, DOT and D2 text)."),
+            "Split the diagram, or remove embedded images.",
+        )
+    }
+
+    /// A compressed page or embedded diagram that unpacks past the limit.
+    pub fn too_large_unpacked(path: &str) -> Self {
+        Self::new(
+            "too_large",
+            format!("{path} unpacks to over 256 MiB; the limit is 256 MiB."),
             "Split the diagram, or remove embedded images.",
         )
     }

@@ -4,6 +4,7 @@ mod bpmn;
 mod d2;
 mod detect;
 mod dot;
+mod drawio;
 mod engine;
 mod error;
 mod input;
@@ -490,8 +491,8 @@ fn run(command: Command, args: Args) -> u8 {
             let (svg, removed) = svg::clean(&String::from_utf8_lossy(&r.svg))
                 .map_err(|e| Error::internal(&format!("the engine's SVG isn't valid XML: {e}")))?;
             let mut warnings = r.warnings;
-            if removed > 0 {
-                warnings.push(Warning::unsafe_content_removed(removed));
+            if removed + r.removed > 0 {
+                warnings.push(Warning::unsafe_content_removed(removed + r.removed));
             }
             let image = match target.1 {
                 To::Svg => {
