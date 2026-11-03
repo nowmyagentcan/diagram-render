@@ -69,7 +69,7 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then x=.exe; else chmod +x $e/*; fi
           if [ "$RUNNER_OS" = Linux ]; then file $e/*; ! file $e/* | grep -vE 'static(-pie|ally) linked'; fi
           ls -l $e out/fonts out/licenses/*
-          test "$(ls out/fonts/Liberation*.ttf | wc -l)" = 8
+          test $(ls out/fonts/Liberation*.ttf | wc -l) -eq 8
           test "$($e/merman-cli$x --version)" = 'merman-cli 0.9.3'
           test "$($e/d2$x --version)" = v0.9.0
           $e/dot$x -V 2>&1 | grep -F 'graphviz version 16.1.0'
