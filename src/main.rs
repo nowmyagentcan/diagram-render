@@ -478,7 +478,7 @@ fn run(command: Command, args: Args) -> u8 {
     };
     let format = diagram.format;
     let done = match target {
-        None => engine::check(format, &mut engine, &task).map(|checked| (None, checked)),
+        None => engine::check(format, &mut engine, &task).map(|c| (None, c.errors, c.warnings)),
         Some(target) => engine::render(format, &mut engine, &task).and_then(|r| {
             let (svg, removed) = svg::clean(&String::from_utf8_lossy(&r.svg))
                 .map_err(|e| Error::internal(&format!("the engine's SVG isn't valid XML: {e}")))?;
@@ -486,11 +486,7 @@ fn run(command: Command, args: Args) -> u8 {
             if removed > 0 {
                 warnings.push(Warning::unsafe_content_removed(removed));
             }
-            let checked = engine::Checked {
-                errors: vec![],
-                warnings,
-            };
-            Ok((Some((target, svg)), checked))
+            Ok((Some((target, svg)), vec![], warnings))
         }),
     };
     if args.debug {
@@ -501,13 +497,13 @@ fn run(command: Command, args: Args) -> u8 {
             return finish(Err(e), 3);
         }
     }
-    let (made, checked) = match done {
+    let (made, errors, warnings) = match done {
         Ok(done) => done,
         Err(e) => return failed(command, &name, &known, &e, args.json),
     };
-    known.warnings.extend(checked.warnings);
+    known.warnings.extend(warnings);
     match made {
-        None => checks(&name, &known, &checked.errors, args.json),
+        None => checks(&name, &known, &errors, args.json),
         Some(((target, to), svg)) => {
             if let Err(e) = output::write(&target, svg.as_bytes()) {
                 return failed(command, &name, &known, &e, args.json);

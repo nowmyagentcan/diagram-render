@@ -20,6 +20,8 @@ pub fn clean(svg: &str) -> Result<(String, usize), String> {
     // The depth of the removed element being skipped, of the `foreignObject` we're inside, and
     // of the `<style>` being copied with where it starts in `out`.
     let (mut skip, mut foreign, mut style) = (None, None, None);
+    let removable =
+        |name: &str, foreign: bool| name == "script" || foreign && HTML_REMOVED.contains(&name);
     loop {
         let from = reader.buffer_position() as usize;
         let event = reader.read_event().map_err(|e| e.to_string())?;
@@ -32,7 +34,7 @@ pub fn clean(svg: &str) -> Result<(String, usize), String> {
                     continue;
                 }
                 let name = local(&tag);
-                if name == "script" || foreign.is_some() && HTML_REMOVED.contains(&name.as_str()) {
+                if removable(&name, foreign.is_some()) {
                     (skip, removed) = (Some(depth), removed + 1);
                     continue;
                 }
@@ -44,8 +46,7 @@ pub fn clean(svg: &str) -> Result<(String, usize), String> {
                 removed += copy_tag(&mut out, raw, &tag, false);
             }
             Event::Empty(tag) if skip.is_none() => {
-                let name = local(&tag);
-                if name == "script" || foreign.is_some() && HTML_REMOVED.contains(&name.as_str()) {
+                if removable(&local(&tag), foreign.is_some()) {
                     removed += 1;
                 } else {
                     removed += copy_tag(&mut out, raw, &tag, true);
