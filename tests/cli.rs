@@ -410,3 +410,139 @@ fn an_unreadable_file_is_read_failed() {
     );
     assert!(!err.contains("os error"), "{err}");
 }
+
+#[test]
+fn detection_reports_the_format_its_engine_and_the_guess() {
+    let dir = folder("detect");
+    std::fs::write(dir.join("notes.txt"), "a -> b\n").unwrap();
+    std::fs::write(dir.join("flow.mmd"), "flowchart LR\n  a --> b\n").unwrap();
+    let cases: &[(&[&str], &[u8], &str, &str)] = &[
+        (&["-"], b"graph TD; A-->B", "mermaid", "flowchart"),
+        (&["check", "-"], b"digraph { a -> b }", "dot", "digraph"),
+        (&["check", "flow.mmd"], b"", "mermaid", "flowchart"),
+        (
+            &["check", "-", "--format", "graphviz"],
+            b"graph G { a }",
+            "dot",
+            "graph",
+        ),
+        (&["check", "-"], b"<mxfile/>", "drawio", ""),
+    ];
+    let engines = json!({
+        "mermaid": {"name": "merman", "version": "0.9.3"},
+        "dot": {"name": "graphviz", "version": "16.1.0"},
+        "drawio": {"name": "diagram-render", "version": "0.1.0"},
+    });
+    for (args, stdin, format, kind) in cases {
+        let (_, out, err) = run_in(&dir, &[*args, &["--json"]].concat(), stdin);
+        assert_eq!(err, "", "{args:?}");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            (&v["format"], &v["engine"]),
+            (&json!(format), &engines[format]),
+            "{args:?}"
+        );
+        assert_eq!(v["warnings"], json!([]));
+        if args[0] == "check" {
+            assert_eq!(
+                v["diagram_type"],
+                if kind.is_empty() {
+                    Value::Null
+                } else {
+                    json!(kind)
+                }
+            );
+        }
+    }
+    let (_, out, _) = run_in(&dir, &["notes.txt", "--json"], b"");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let guessed = "Read as D2 (no Mermaid or DOT header found); pass --format to choose.";
+    assert_eq!(
+        (&v["format"], &v["warnings"]),
+        (
+            &json!("d2"),
+            &json!([{"code": "format_guessed", "message": guessed}])
+        )
+    );
+    let (_, _, err) = run_in(&dir, &["notes.txt"], b"");
+    assert!(
+        err.starts_with(&format!("! notes.txt: {guessed}\n✗ notes.txt: ")),
+        "{err}"
+    );
+}
+
+#[test]
+fn formats_the_tool_doesnt_read_are_refused_by_name() {
+    let dir = folder("refused");
+    std::fs::write(dir.join("README.md"), "# Notes\n").unwrap();
+    std::fs::write(dir.join("page.html"), "<html><body/></html>").unwrap();
+    std::fs::write(
+        dir.join("logo.svg"),
+        "<svg xmlns='http://www.w3.org/2000/svg'/>",
+    )
+    .unwrap();
+    let cases = [
+        (
+            "README.md",
+            "unsupported_input",
+            "Markdown files aren't rendered as a whole.",
+            "Copy one diagram into its own .mmd file, or pipe it in with --format mermaid.",
+        ),
+        (
+            "page.html",
+            "unknown_format",
+            "Can't tell which diagram language this is.",
+            "Pass --format mermaid, dot, d2, bpmn, drawio or excalidraw.",
+        ),
+        (
+            "logo.svg",
+            "unsupported_input",
+            "logo.svg is an image with no draw.io or Excalidraw diagram inside.",
+            "Nothing to render; it's already an image.",
+        ),
+    ];
+    for (file, code, message, hint) in cases {
+        let (exit, _, err) = run_in(&dir, &[file], b"");
+        assert_eq!(exit, 1);
+        assert_eq!(err, format!("✗ {file}: {message}\n  {hint}\n"));
+        let (_, out, _) = run_in(&dir, &["check", file, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            (v["errors"][0]["code"].as_str(), &v["format"]),
+            (Some(code), &Value::Null)
+        );
+    }
+    // --format wins over the refusal.
+    let (_, out, _) = run_in(&dir, &["README.md", "--format", "mermaid", "--json"], b"");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["format"], "mermaid");
+}
+
+#[test]
+fn page_is_a_usage_error_for_formats_without_pages() {
+    let dir = folder("pages");
+    for (stdin, name) in [
+        (&b"graph TD"[..], "Mermaid"),
+        (b"digraph {}", "Graphviz DOT"),
+        (br#"{"type":"excalidraw"}"#, "Excalidraw"),
+    ] {
+        let (code, out, err) = run_in(&dir, &["-", "--page", "2"], stdin);
+        assert_eq!((code, out.as_str()), (2, ""));
+        assert_eq!(
+            err,
+            format!("✗ {name} diagrams have no pages.\n  Drop --page.\n")
+        );
+        let (code, out, _) = run_in(&dir, &["check", "-", "--page", "x", "--json"], stdin);
+        assert_eq!(code, 2);
+        let message = format!("{name} diagrams have no pages.");
+        assert_eq!(
+            serde_json::from_str::<Value>(&out).unwrap(),
+            json!({"error": {"code": "page_not_supported", "message": message, "hint": "Drop --page."}})
+        );
+    }
+    let (_, out, _) = run_in(&dir, &["-", "--page", "2", "--json"], b"a -> b");
+    assert_ne!(
+        serde_json::from_str::<Value>(&out).unwrap()["error"]["code"],
+        "page_not_supported"
+    );
+}

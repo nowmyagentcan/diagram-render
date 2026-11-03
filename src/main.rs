@@ -1,14 +1,17 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
+mod detect;
 mod error;
 mod input;
 mod text;
 
 use std::ffi::OsString;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::ExitCode;
 
-use error::Error;
+use detect::Format;
+use error::{Error, Warning};
 use lexopt::Arg::{Long, Short, Value};
 use serde_json::json;
 use text::Look;
@@ -80,6 +83,8 @@ enum Command {
 #[derive(Default)]
 struct Args {
     input: Option<OsString>,
+    format: Option<Format>,
+    page: Option<String>,
     json: bool,
 }
 
@@ -173,10 +178,10 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             ("--debug" | "--allow-network", _) => {}
             ("--output", _) => drop(p.value()?),
             ("--to", _) => to(&string(&mut p, name)?)?,
-            ("--format", _) => format(&string(&mut p, name)?)?,
+            ("--format", _) => args.format = format(&string(&mut p, name)?)?,
             ("--scale", _) => drop(scale(&string(&mut p, name)?)?),
             ("--background", _) => background(&string(&mut p, name)?)?,
-            ("--page", _) => page(&string(&mut p, name)?)?,
+            ("--page", _) => args.page = Some(page(string(&mut p, name)?)?),
             ("--timeout", _) => drop(timeout(&string(&mut p, name)?)?),
             (_, Value(input)) if args.input.is_none() => args.input = Some(input),
             (_, Value(_)) => return Err(Error::one_input_only()),
@@ -276,25 +281,13 @@ fn to(v: &str) -> Result<(), Error> {
     }
 }
 
-fn format(v: &str) -> Result<(), Error> {
-    const NAMES: &[&str] = &[
-        "auto",
-        "mermaid",
-        "dot",
-        "graphviz",
-        "gv",
-        "d2",
-        "bpmn",
-        "drawio",
-        "excalidraw",
-    ];
-    match NAMES.contains(&v.to_ascii_lowercase().as_str()) {
-        true => Ok(()),
-        false => Err(Error::invalid_option(
+fn format(v: &str) -> Result<Option<Format>, Error> {
+    Format::parse(v).ok_or_else(|| {
+        Error::invalid_option(
             "--format must be auto, mermaid, dot, d2, bpmn, drawio or excalidraw.",
             try_hint("--format"),
-        )),
-    }
+        )
+    })
 }
 
 /// `--scale`: 0.1 to 8 with at most 2 decimals.
@@ -335,13 +328,13 @@ fn background(v: &str) -> Result<(), Error> {
     }
 }
 
-fn page(v: &str) -> Result<(), Error> {
+fn page(v: String) -> Result<String, Error> {
     match v.trim().is_empty() {
         true => Err(Error::invalid_option(
             "--page needs a page number or name.",
             try_hint("--page"),
         )),
-        false => Ok(()),
+        false => Ok(v),
     }
 }
 
@@ -361,24 +354,66 @@ fn run(command: Command, args: Args) -> u8 {
         return usage(&Error::no_input(), args.json);
     };
     let name = arg.to_string_lossy().into_owned();
-    let e = match input::read(&arg).and_then(|bytes| input::text(&bytes)) {
-        Ok(_) => Error::internal("no renderer is built in yet"),
-        Err(e) => e,
+    let path = (arg != "-").then(|| Path::new(&arg));
+    let shown = if path.is_some() {
+        name.as_str()
+    } else {
+        "stdin"
     };
-    let written = if args.json {
+    let mut known = Known {
+        format: args.format,
+        ..Known::default()
+    };
+    let read = input::read(&arg);
+    let diagram = match read.and_then(|bytes| detect::detect(path, shown, &bytes, args.format)) {
+        Ok(diagram) => diagram,
+        Err(e) => return failed(command, &name, &known, &e, args.json),
+    };
+    if args.page.is_some() && !diagram.format.has_pages() {
+        return usage(&Error::page_not_supported(diagram.format.name()), args.json);
+    }
+    known = Known {
+        format: Some(diagram.format),
+        diagram_type: diagram.diagram_type,
+        warnings: diagram.warnings,
+    };
+    let e = Error::internal("no renderer is built in yet");
+    failed(command, &name, &known, &e, args.json)
+}
+
+/// What a run learned about its input before it stopped.
+#[derive(Default)]
+struct Known {
+    format: Option<Format>,
+    diagram_type: Option<&'static str>,
+    warnings: Vec<Warning>,
+}
+
+/// Reports a failed render or check: the warnings and the error on stderr, or one JSON object.
+fn failed(command: Command, input: &str, known: &Known, e: &Error, json: bool) -> u8 {
+    let written = if json {
+        let warnings: Vec<_> = known.warnings.iter().map(Warning::json).collect();
+        let engine = known.format.map(|f| {
+            let (name, version) = f.engine();
+            json!({"name": name, "version": version})
+        });
+        let format = known.format.map(Format::id);
         let result = match command {
             Command::Render => json!({
-                "input": name, "format": null, "output": null, "error": e.json(),
-                "warnings": [], "engine": null,
+                "input": input, "format": format, "output": null, "error": e.json(),
+                "warnings": warnings, "engine": engine,
             }),
             Command::Check => json!({
-                "input": name, "format": null, "diagram_type": null, "valid": false,
-                "errors": [e.check_json()], "warnings": [], "engine": null,
+                "input": input, "format": format, "diagram_type": known.diagram_type,
+                "valid": false, "errors": [e.check_json()], "warnings": warnings, "engine": engine,
             }),
         };
         writeln!(io::stdout(), "{result}")
     } else {
-        text::error(&mut io::stderr(), Look::stderr(), Some(&name), &e)
+        let (mut err, look) = (io::stderr().lock(), Look::stderr());
+        (known.warnings.iter())
+            .try_for_each(|w| text::warning(&mut err, look, input, w))
+            .and_then(|()| text::error(&mut err, look, Some(input), e))
     };
     finish(written, e.exit_code())
 }

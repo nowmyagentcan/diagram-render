@@ -5,11 +5,12 @@
 use std::env;
 use std::io::{self, IsTerminal, Write};
 
-use crate::error::Error;
+use crate::error::{Error, Warning};
 
 const DIM: &str = "2";
 const BOLD: &str = "1";
 const RED: &str = "31";
+const YELLOW: &str = "33";
 
 /// How one stream shows text.
 #[derive(Debug, Clone, Copy, Default)]
@@ -143,6 +144,14 @@ pub fn error(w: &mut impl Write, look: Look, input: Option<&str>, e: &Error) -> 
     writeln!(w, "  {}", look.paint(DIM, &escape(&e.hint)))
 }
 
+/// `! input[:line]: message`.
+pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -> io::Result<()> {
+    let mark = look.paint(YELLOW, "!");
+    let line = warning.line.map(|l| format!(":{l}")).unwrap_or_default();
+    let message = escape(&warning.message);
+    writeln!(w, "{mark} {}{line}: {message}", escape(input))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +205,18 @@ mod tests {
         assert!(rows[1].starts_with("    1 | ...aaa"), "{}", rows[1]);
         assert!(rows[1].ends_with("a<U+001B>x"), "{}", rows[1]);
         assert_eq!(rows[2].find('^'), rows[1].rfind('x'));
+    }
+
+    #[test]
+    fn warnings_name_the_input_and_their_line() {
+        let mut warning = Warning::format_guessed();
+        let mut w = vec![];
+        super::warning(&mut w, COLOUR, "-", &warning).unwrap();
+        warning.line = Some(4);
+        super::warning(&mut w, Look::default(), "a.d2", &warning).unwrap();
+        let message = "Read as D2 (no Mermaid or DOT header found); pass --format to choose.";
+        let want = format!("\x1b[33m!\x1b[0m -: {message}\n! a.d2:4: {message}\n");
+        assert_eq!(String::from_utf8(w).unwrap(), want);
     }
 
     #[test]

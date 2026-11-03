@@ -1,5 +1,5 @@
-//! Every failure the tool reports: a stable code, a sentence saying what happened, a sentence
-//! saying what to do, and where in the source it is when that is known.
+//! Every failure and warning the tool reports: a stable code, a sentence saying what happened, a
+//! sentence saying what to do, and where in the source it is when that is known.
 
 use serde_json::{Value, json};
 
@@ -22,7 +22,38 @@ pub struct Excerpt {
     pub caret: Option<usize>,
 }
 
-const USAGE: &[&str] = &["invalid_option", "one_input_only", "no_input"];
+/// Something worth knowing about a run that still succeeded.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Warning {
+    pub code: &'static str,
+    pub message: String,
+    pub line: Option<usize>,
+}
+
+impl Warning {
+    pub fn format_guessed() -> Self {
+        Self {
+            code: "format_guessed",
+            message: "Read as D2 (no Mermaid or DOT header found); pass --format to choose.".into(),
+            line: None,
+        }
+    }
+
+    pub fn json(&self) -> Value {
+        let mut w = json!({"code": self.code, "message": self.message});
+        if let Some(line) = self.line {
+            w["line"] = line.into();
+        }
+        w
+    }
+}
+
+const USAGE: &[&str] = &[
+    "invalid_option",
+    "one_input_only",
+    "no_input",
+    "page_not_supported",
+];
 
 impl Error {
     fn new(code: &'static str, message: impl Into<String>, hint: impl Into<String>) -> Self {
@@ -140,6 +171,54 @@ impl Error {
         )
     }
 
+    pub fn unknown_format() -> Self {
+        Self::new(
+            "unknown_format",
+            "Can't tell which diagram language this is.",
+            "Pass --format mermaid, dot, d2, bpmn, drawio or excalidraw.",
+        )
+    }
+
+    pub fn unsupported_markdown() -> Self {
+        Self::new(
+            "unsupported_input",
+            "Markdown files aren't rendered as a whole.",
+            "Copy one diagram into its own .mmd file, or pipe it in with --format mermaid.",
+        )
+    }
+
+    pub fn unsupported_plantuml() -> Self {
+        Self::new(
+            "unsupported_input",
+            "PlantUML isn't supported.",
+            "Export it from its own app as SVG or PNG.",
+        )
+    }
+
+    pub fn unsupported_visio() -> Self {
+        Self::new(
+            "unsupported_input",
+            "Visio files aren't supported.",
+            "Export it from its own app as SVG or PNG.",
+        )
+    }
+
+    pub fn unsupported_image(name: &str) -> Self {
+        Self::new(
+            "unsupported_input",
+            format!("{name} is an image with no draw.io or Excalidraw diagram inside."),
+            "Nothing to render; it's already an image.",
+        )
+    }
+
+    pub fn page_not_supported(format: &str) -> Self {
+        Self::new(
+            "page_not_supported",
+            format!("{format} diagrams have no pages."),
+            "Drop --page.",
+        )
+    }
+
     pub fn internal(detail: &str) -> Self {
         Self::new(
             "internal",
@@ -178,6 +257,14 @@ mod tests {
         assert!(!reason(&e).contains("os error"));
         assert!(reason(&e).starts_with(char::is_lowercase));
         assert_eq!(reason(&std::io::Error::other("Locked.")), "locked");
+    }
+
+    #[test]
+    fn warnings_carry_a_line_only_when_they_have_one() {
+        let mut w = Warning::format_guessed();
+        assert_eq!(w.json().as_object().unwrap().len(), 2);
+        w.line = Some(4);
+        assert_eq!(w.json()["line"], 4);
     }
 
     #[test]
