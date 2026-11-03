@@ -5,12 +5,15 @@
 use std::env;
 use std::io::{self, IsTerminal, Write};
 
+use crate::detect::Format;
+use crate::engine::Probe;
 use crate::error::{Error, Warning};
 
 const DIM: &str = "2";
 const BOLD: &str = "1";
 const RED: &str = "31";
 const YELLOW: &str = "33";
+const GREEN: &str = "32";
 
 /// How one stream shows text.
 #[derive(Debug, Clone, Copy, Default)]
@@ -20,6 +23,10 @@ pub struct Look {
 }
 
 impl Look {
+    pub fn stdout() -> Self {
+        Self::new(io::stdout().is_terminal(), console::STDOUT)
+    }
+
     pub fn stderr() -> Self {
         Self::new(io::stderr().is_terminal(), console::STDERR)
     }
@@ -51,10 +58,11 @@ impl Look {
 mod console {
     use windows::Win32::System::Console::{
         CONSOLE_MODE, ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetConsoleOutputCP,
-        GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, SetConsoleMode,
+        GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, STD_OUTPUT_HANDLE, SetConsoleMode,
     };
 
     pub type Stream = STD_HANDLE;
+    pub const STDOUT: Stream = STD_OUTPUT_HANDLE;
     pub const STDERR: Stream = STD_ERROR_HANDLE;
 
     /// Turns on ANSI sequences for the console behind `stream`.
@@ -78,6 +86,7 @@ mod console {
 #[cfg(not(windows))]
 mod console {
     pub type Stream = ();
+    pub const STDOUT: Stream = ();
     pub const STDERR: Stream = ();
 
     pub fn enable_ansi(_: Stream) -> bool {
@@ -150,6 +159,31 @@ pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -
     let line = warning.line.map(|l| format!(":{l}")).unwrap_or_default();
     let message = escape(&warning.message);
     writeln!(w, "{mark} {}{line}: {message}", escape(input))
+}
+
+/// One line per format: its name, engine, extensions, and `ok` or why its engine doesn't run.
+pub fn formats(w: &mut impl Write, look: Look, rows: &[(&Format, &Probe)]) -> io::Result<()> {
+    let cells: Vec<_> = (rows.iter())
+        .map(|(f, _)| {
+            let (engine, version) = f.engine();
+            (
+                f.id(),
+                format!("{engine} {version}"),
+                f.extensions().join(" "),
+            )
+        })
+        .collect();
+    let a = cells.iter().map(|c| c.0.len()).max().unwrap_or(0) + 2;
+    let b = cells.iter().map(|c| c.1.len()).max().unwrap_or(0) + 2;
+    let c = cells.iter().map(|c| c.2.len()).max().unwrap_or(0) + 2;
+    for ((id, engine, extensions), (_, probe)) in cells.iter().zip(rows) {
+        let status = match &probe.problem {
+            None => look.paint(GREEN, "ok"),
+            Some(e) => look.paint(RED, &escape(&e.message)),
+        };
+        writeln!(w, "{id:a$}{engine:b$}{extensions:c$}{status}")?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

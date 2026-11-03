@@ -18,6 +18,15 @@ pub enum Format {
 }
 
 impl Format {
+    pub const ALL: [Self; 6] = [
+        Self::Mermaid,
+        Self::Dot,
+        Self::D2,
+        Self::Bpmn,
+        Self::Drawio,
+        Self::Excalidraw,
+    ];
+
     pub fn id(self) -> &'static str {
         match self {
             Self::Mermaid => "mermaid",
@@ -37,6 +46,28 @@ impl Format {
             Self::Bpmn => "BPMN 2.0",
             Self::Drawio => "draw.io",
             Self::Excalidraw => "Excalidraw",
+        }
+    }
+
+    pub fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Self::Mermaid => &[".mmd", ".mermaid"],
+            Self::Dot => &[".dot", ".gv"],
+            Self::D2 => &[".d2"],
+            Self::Bpmn => &[".bpmn", ".bpmn2"],
+            Self::Drawio => &[
+                ".drawio",
+                ".dio",
+                ".drawio.xml",
+                ".drawio.svg",
+                ".drawio.png",
+            ],
+            Self::Excalidraw => &[
+                ".excalidraw",
+                ".excalidraw.json",
+                ".excalidraw.svg",
+                ".excalidraw.png",
+            ],
         }
     }
 
@@ -74,25 +105,15 @@ impl Format {
     }
 }
 
-/// Extensions, longest first so `.drawio.png` wins over `.png`.
-const EXTENSIONS: &[(&str, Format)] = &[
-    (".excalidraw.json", Format::Excalidraw),
-    (".excalidraw.svg", Format::Excalidraw),
-    (".excalidraw.png", Format::Excalidraw),
-    (".drawio.xml", Format::Drawio),
-    (".drawio.svg", Format::Drawio),
-    (".drawio.png", Format::Drawio),
-    (".excalidraw", Format::Excalidraw),
-    (".mermaid", Format::Mermaid),
-    (".drawio", Format::Drawio),
-    (".bpmn2", Format::Bpmn),
-    (".bpmn", Format::Bpmn),
-    (".mmd", Format::Mermaid),
-    (".dio", Format::Drawio),
-    (".dot", Format::Dot),
-    (".gv", Format::Dot),
-    (".d2", Format::D2),
-];
+/// The format a lowercase file name's extension names, and that extension; the longest match
+/// wins, so `.drawio.png` beats `.png`.
+fn extension(name: &str) -> Option<(Format, &'static str)> {
+    let all = Format::ALL
+        .iter()
+        .flat_map(|&f| f.extensions().iter().map(move |&e| (f, e)));
+    all.filter(|(_, ext)| name.ends_with(ext))
+        .max_by_key(|(_, ext)| ext.len())
+}
 
 /// Text sources over this are refused.
 const TEXT_LIMIT: usize = 4 << 20;
@@ -157,8 +178,8 @@ pub fn detect(
 fn by_extension(path: &Path) -> Result<Option<Format>, Error> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let name = name.to_ascii_lowercase();
-    if let Some((_, f)) = EXTENSIONS.iter().find(|(ext, _)| name.ends_with(ext)) {
-        return Ok(Some(*f));
+    if let Some((format, _)) = extension(&name) {
+        return Ok(Some(format));
     }
     match name.rsplit_once('.').map_or("", |(_, ext)| ext) {
         "md" => Err(Error::unsupported_markdown()),
@@ -173,9 +194,9 @@ fn by_extension(path: &Path) -> Result<Option<Format>, Error> {
 pub fn stem(path: &Path) -> OsString {
     let name = path.file_name().unwrap_or_default();
     let lower = name.to_string_lossy().to_ascii_lowercase();
-    let known = EXTENSIONS.iter().find(|(ext, _)| lower.ends_with(ext));
+    let dots = extension(&lower).map_or(1, |(_, ext)| ext.matches('.').count());
     let mut stem = Path::new(name);
-    for _ in 0..known.map_or(1, |(ext, _)| ext.matches('.').count()) {
+    for _ in 0..dots {
         stem = Path::new(stem.file_stem().unwrap_or(stem.as_os_str()));
     }
     stem.as_os_str().to_owned()

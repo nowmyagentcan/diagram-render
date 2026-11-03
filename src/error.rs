@@ -84,7 +84,7 @@ impl Error {
     pub fn exit_code(&self) -> u8 {
         match self.code {
             c if USAGE.contains(&c) => 2,
-            "internal" => 3,
+            "engine_missing" | "engine_failed" | "internal" => 3,
             _ => 1,
         }
     }
@@ -264,6 +264,40 @@ impl Error {
         )
     }
 
+    pub fn engine_missing(engine: &str, path: &str) -> Self {
+        Self::new(
+            "engine_missing",
+            format!("The {engine} engine is missing: {path} doesn't exist."),
+            "Reinstall diagram-render.",
+        )
+    }
+
+    /// `code` is `exit code 2` or `killed by a signal`; `first` the first line it printed.
+    pub fn engine_failed(engine: &str, code: &str, first: Option<&str>) -> Self {
+        let said = first.map(|l| format!(": {}", l.trim())).unwrap_or_default();
+        Self::new(
+            "engine_failed",
+            format!("{engine} stopped unexpectedly ({code}){said}."),
+            "Run with --debug for the full output.",
+        )
+    }
+
+    pub fn engine_unstartable(engine: &str, e: &std::io::Error) -> Self {
+        Self::new(
+            "engine_failed",
+            format!("The {engine} engine couldn't start: {}.", reason(e)),
+            "Reinstall diagram-render.",
+        )
+    }
+
+    pub fn engine_slow(engine: &str, seconds: u64) -> Self {
+        Self::new(
+            "engine_failed",
+            format!("The {engine} engine didn't answer within {seconds} s."),
+            "Run diagram-render formats again; if it stays slow, reinstall diagram-render.",
+        )
+    }
+
     pub fn internal(detail: &str) -> Self {
         Self::new(
             "internal",
@@ -294,6 +328,16 @@ mod tests {
         assert_eq!(Error::no_input().exit_code(), 2);
         assert_eq!(Error::one_input_only().exit_code(), 2);
         assert_eq!(Error::internal("x").exit_code(), 3);
+        assert_eq!(Error::engine_missing("D2", "x").exit_code(), 3);
+        assert_eq!(
+            Error::engine_failed("D2", "exit code 2", None).exit_code(),
+            3
+        );
+        let failed = Error::engine_failed("D2", "exit code 2", Some(" err: bad flag "));
+        assert_eq!(
+            failed.message,
+            "D2 stopped unexpectedly (exit code 2): err: bad flag."
+        );
     }
 
     #[test]

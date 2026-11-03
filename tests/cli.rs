@@ -200,6 +200,9 @@ fn closed_stdout_or_stderr_ends_quietly_with_the_run_s_code() {
         (&["--scale", "9", "--json"], 2),
         (&["a.mmd", "--json"], 1),
         (&["check", "a.mmd", "--json"], 1),
+        (&["formats"], 0),
+        (&["formats", "--json"], 0),
+        (&["formats", "--debug"], 0),
     ];
     for (args, want) in cases {
         let out = cmd(args).stdout(closed()).output().unwrap();
@@ -646,5 +649,181 @@ fn scale_with_svg_output_is_a_warning() {
     assert_eq!(
         serde_json::from_str::<Value>(&out).unwrap()["warnings"],
         json!([])
+    );
+}
+
+/// A copy of the binary in a folder of its own, whose `engines/` holds `engines` (each a copy of
+/// the binary under that name, so it answers `--version` but fails anything else).
+fn installed(name: &str, engines: &[&str]) -> std::path::PathBuf {
+    let dir = folder(name);
+    let exe = |name: &str| format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    let bin = dir.join(exe("diagram-render"));
+    std::fs::copy(env!("CARGO_BIN_EXE_diagram-render"), &bin).unwrap();
+    std::fs::create_dir(dir.join("engines")).unwrap();
+    for engine in engines {
+        std::fs::copy(&bin, dir.join("engines").join(exe(engine))).unwrap();
+    }
+    bin
+}
+
+fn run_at(bin: &std::path::Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) {
+    use std::io::Write;
+    let mut child = Command::new(bin)
+        .args(args)
+        .current_dir(bin.parent().unwrap())
+        .env_remove("NO_COLOR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let text = |b| String::from_utf8(b).unwrap();
+    (
+        out.status.code().unwrap(),
+        text(out.stdout),
+        text(out.stderr),
+    )
+}
+
+#[test]
+fn formats_lists_every_format_with_its_engine_running_here() {
+    let (code, v) = json(&["formats", "--json"]);
+    assert_eq!(code, 0);
+    let rows = v["formats"].as_array().unwrap();
+    let ids: Vec<_> = rows.iter().map(|r| r["format"].as_str().unwrap()).collect();
+    assert_eq!(
+        ids,
+        ["mermaid", "dot", "d2", "bpmn", "drawio", "excalidraw"]
+    );
+    for row in rows {
+        assert_eq!(
+            (&row["available"], &row["problem"]),
+            (&json!(true), &Value::Null),
+            "{row}"
+        );
+    }
+    assert_eq!(
+        rows[4],
+        json!({"format": "drawio", "name": "draw.io", "extensions": [".drawio", ".dio", ".drawio.xml", ".drawio.svg", ".drawio.png"], "engine": {"name": "diagram-render", "version": "0.1.0"}, "available": true, "problem": null})
+    );
+    let families = rows[0]["families"].as_array().unwrap();
+    for family in ["flowchart", "sequence", "class", "zenuml"] {
+        assert!(families.contains(&json!(family)), "{family}");
+    }
+    assert!(rows[1].get("families").is_none());
+    let (code, out, err) = run(&["formats"]);
+    assert_eq!((code, err.as_str()), (0, ""));
+    let lines: Vec<_> = out.lines().collect();
+    assert_eq!(
+        lines[0],
+        format!(
+            "mermaid     merman 0.9.3          .mmd .mermaid{}ok",
+            " ".repeat(49)
+        )
+    );
+    assert_eq!(
+        lines[5],
+        "excalidraw  diagram-render 0.1.0  .excalidraw .excalidraw.json .excalidraw.svg .excalidraw.png  ok"
+    );
+    let (_, _, err) = run(&["formats", "--debug"]);
+    assert!(
+        err.contains(" -V\n") && err.contains("debug: dot - graphviz version 16.1.0"),
+        "{err}"
+    );
+}
+
+#[test]
+fn formats_names_each_engine_that_is_missing_or_fails() {
+    let bin = installed("no-engines", &["merman-cli"]);
+    let (code, out, _) = run_at(&bin, &["formats", "--json"], b"");
+    assert_eq!(code, 0);
+    let v: Value = serde_json::from_str(&out).unwrap();
+    let engines = bin.parent().unwrap().join("engines");
+    let dot = engines.join(format!("dot{}", std::env::consts::EXE_SUFFIX));
+    let problem = |i: usize| v["formats"][i]["problem"].as_str().unwrap().to_string();
+    assert_eq!(v["formats"][1]["available"], false);
+    assert_eq!(
+        problem(1),
+        format!(
+            "The Graphviz engine is missing: {} doesn't exist.",
+            dot.display()
+        )
+    );
+    assert!(problem(2).starts_with("The D2 engine is missing: "));
+    // This stand-in answers --version but not `capabilities --json`.
+    assert_eq!(problem(0), "Mermaid stopped unexpectedly (exit code 1).");
+    assert_eq!(v["formats"][3]["available"], true);
+    let (_, out, _) = run_at(&bin, &["formats"], b"");
+    assert!(out.lines().nth(1).unwrap().ends_with(&format!(
+        "  The Graphviz engine is missing: {} doesn't exist.",
+        dot.display()
+    )));
+    let (_, _, err) = run_at(&bin, &["formats", "--debug"], b"");
+    assert!(
+        err.contains("capabilities --json\ndebug: exit code 1 after "),
+        "{err}"
+    );
+}
+
+#[test]
+fn rendering_without_its_engine_is_engine_missing() {
+    let bin = installed("render-no-engine", &[]);
+    for (stdin, label, file) in [
+        (&b"graph TD"[..], "Mermaid", "merman-cli"),
+        (b"digraph {}", "Graphviz", "dot"),
+        (b"a -> b", "D2", "d2"),
+    ] {
+        let exe = bin
+            .parent()
+            .unwrap()
+            .join("engines")
+            .join(format!("{file}{}", std::env::consts::EXE_SUFFIX));
+        let message = format!(
+            "The {label} engine is missing: {} doesn't exist.",
+            exe.display()
+        );
+        let (code, _, err) = run_at(&bin, &["-", "-o", "x.svg"], stdin);
+        assert_eq!(code, 3);
+        assert!(
+            err.ends_with(&format!("✗ -: {message}\n  Reinstall diagram-render.\n")),
+            "{err}"
+        );
+        let (code, out, _) = run_at(&bin, &["check", "-", "--json"], stdin);
+        assert_eq!(code, 3);
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            (
+                v["errors"][0]["code"].as_str(),
+                v["errors"][0]["message"].as_str()
+            ),
+            (Some("engine_missing"), Some(message.as_str()))
+        );
+    }
+}
+
+#[test]
+fn formats_takes_only_its_own_options() {
+    assert_eq!(
+        run(&["formats", "x"]),
+        (
+            2,
+            "".into(),
+            "✗ formats takes no file.\n  Run diagram-render formats on its own.\n".into()
+        )
+    );
+    let (code, _, err) = run(&["formats", "--page", "2"]);
+    assert_eq!(
+        (code, err.as_str()),
+        (
+            2,
+            "✗ --page doesn't apply to formats.\n  Run diagram-render formats --help for its options.\n"
+        )
+    );
+    assert!(
+        run(&["formats", "-h"])
+            .1
+            .starts_with("List the formats and whether each engine runs here.\n")
     );
 }

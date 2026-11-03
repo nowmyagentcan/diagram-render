@@ -1,6 +1,7 @@
 //! The command line: `diagram-render [render] <INPUT> [OPTIONS]` and `diagram-render check <INPUT>`.
 
 mod detect;
+mod engine;
 mod error;
 mod input;
 mod output;
@@ -10,6 +11,7 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
+use std::thread;
 
 use detect::Format;
 use error::{Error, Warning};
@@ -76,10 +78,51 @@ Examples:
   diagram-render check broken.d2 --json
 ";
 
+const FORMATS_HELP: &str = "\
+List the formats and whether each engine runs here.
+
+Usage: diagram-render formats [OPTIONS]
+
+Options:
+      --json             print one JSON object
+      --debug            show engine command lines and full output
+  -h, --help             print help
+";
+
 #[derive(Clone, Copy, PartialEq)]
 enum Command {
     Render,
     Check,
+    Formats,
+}
+
+impl Command {
+    fn word(self) -> &'static str {
+        match self {
+            Self::Render => "render",
+            Self::Check => "check",
+            Self::Formats => "formats",
+        }
+    }
+
+    fn help(self) -> &'static str {
+        match self {
+            Self::Render => HELP,
+            Self::Check => CHECK_HELP,
+            Self::Formats => FORMATS_HELP,
+        }
+    }
+
+    /// Whether `option` belongs to this command.
+    fn takes(self, option: &str) -> bool {
+        let common = ["--json", "--debug", "--help"];
+        let check = ["--format", "--page", "--timeout"];
+        match self {
+            Self::Render => true,
+            Self::Check => common.contains(&option) || check.contains(&option),
+            Self::Formats => common.contains(&option),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -91,6 +134,7 @@ struct Args {
     format: Option<Format>,
     page: Option<String>,
     json: bool,
+    debug: bool,
 }
 
 enum Parsed {
@@ -109,10 +153,12 @@ fn main() -> ExitCode {
     let (command, rest) = match args.first().and_then(|a| a.to_str()) {
         Some("render") => (Command::Render, &args[1..]),
         Some("check") => (Command::Check, &args[1..]),
+        Some("formats") => (Command::Formats, &args[1..]),
         _ => (Command::Render, &args[..]),
     };
     let code = match parse(command, rest) {
         Ok(Parsed::Print(text)) => finish(io::stdout().write_all(text.as_bytes()), 0),
+        Ok(Parsed::Run(args)) if command == Command::Formats => formats(&args),
         Ok(Parsed::Run(args)) => run(command, args),
         Err(e) => usage(&e, json),
     };
@@ -150,29 +196,16 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
                 "Give each option once.",
             ));
         }
-        let render_only = [
-            "--output",
-            "--to",
-            "--scale",
-            "--background",
-            "--allow-network",
-        ];
-        if command == Command::Check && render_only.contains(&name) {
+        if !name.is_empty() && !command.takes(name) && name != "--version" {
+            let word = command.word();
             return Err(Error::invalid_option(
-                format!("{name} doesn't apply to check."),
-                "Run diagram-render check --help for its options.",
+                format!("{name} doesn't apply to {word}."),
+                format!("Run diagram-render {word} --help for its options."),
             ));
         }
         seen.push(name);
         match (name, arg) {
-            ("--help", _) => {
-                let help = if command == Command::Check {
-                    CHECK_HELP
-                } else {
-                    HELP
-                };
-                return Ok(Parsed::Print(help.into()));
-            }
+            ("--help", _) => return Ok(Parsed::Print(command.help().into())),
             ("--version", _) if command == Command::Render => {
                 return Ok(Parsed::Print(format!(
                     "diagram-render {}\n",
@@ -180,7 +213,8 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
                 )));
             }
             ("--json", _) => args.json = true,
-            ("--debug" | "--allow-network", _) => {}
+            ("--debug", _) => args.debug = true,
+            ("--allow-network", _) => {}
             ("--output", _) => args.output = Some(p.value()?),
             ("--to", _) => args.to = Some(to(&string(&mut p, name)?)?),
             ("--format", _) => args.format = format(&string(&mut p, name)?)?,
@@ -188,6 +222,12 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             ("--background", _) => background(&string(&mut p, name)?)?,
             ("--page", _) => args.page = Some(page(string(&mut p, name)?)?),
             ("--timeout", _) => drop(timeout(&string(&mut p, name)?)?),
+            (_, Value(_)) if command == Command::Formats => {
+                return Err(Error::invalid_option(
+                    "formats takes no file.",
+                    "Run diagram-render formats on its own.",
+                ));
+            }
             (_, Value(input)) if args.input.is_none() => args.input = Some(input),
             (_, Value(_)) => return Err(Error::one_input_only()),
             (_, arg) => {
@@ -196,10 +236,9 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
                     Long(l) => format!("--{l}"),
                     Value(_) => unreachable!("values are matched above"),
                 };
-                let help = if command == Command::Check {
-                    " check"
-                } else {
-                    ""
+                let help = match command {
+                    Command::Render => String::new(),
+                    c => format!(" {}", c.word()),
                 };
                 return Err(Error::invalid_option(
                     format!("Unknown option {option}."),
@@ -397,8 +436,46 @@ fn run(command: Command, args: Args) -> u8 {
         diagram_type: diagram.diagram_type,
         warnings: [diagram.warnings, warnings].concat(),
     };
-    let e = Error::internal("no renderer is built in yet");
+    let e = match engine::locate(diagram.format) {
+        Some(Err(missing)) => missing,
+        _ => Error::internal("no renderer is built in yet"),
+    };
     failed(command, &name, &known, &e, args.json)
+}
+
+/// `diagram-render formats`: each format, its engine, and whether that engine runs here.
+fn formats(args: &Args) -> u8 {
+    let probes: Vec<_> = thread::scope(|s| {
+        let probes: Vec<_> = (Format::ALL.iter())
+            .map(|&f| s.spawn(move || engine::probe(f)))
+            .collect();
+        probes.into_iter().map(|p| p.join().unwrap()).collect()
+    });
+    let mut err = io::stderr().lock();
+    let mut debug = probes.iter().flat_map(|p| &p.log).filter(|_| args.debug);
+    let written = debug.try_for_each(|l| writeln!(err, "debug: {}", text::escape(l)));
+    let rows: Vec<_> = Format::ALL.iter().zip(&probes).collect();
+    let written = written.and_then(|()| {
+        let mut out = io::stdout().lock();
+        if !args.json {
+            return text::formats(&mut out, Look::stdout(), &rows);
+        }
+        let rows = rows.iter().map(|(f, probe)| {
+            let (name, version) = f.engine();
+            let mut row = json!({
+                "format": f.id(), "name": f.name(), "extensions": f.extensions(),
+                "engine": {"name": name, "version": version},
+                "available": probe.problem.is_none(),
+                "problem": probe.problem.as_ref().map(|e| &e.message),
+            });
+            if **f == Format::Mermaid {
+                row["families"] = json!(probe.families);
+            }
+            row
+        });
+        writeln!(out, "{}", json!({"formats": rows.collect::<Vec<_>>()}))
+    });
+    finish(written, 0)
 }
 
 /// What a run learned about its input before it stopped.
@@ -419,7 +496,7 @@ fn failed(command: Command, input: &str, known: &Known, e: &Error, json: bool) -
         });
         let format = known.format.map(Format::id);
         let result = match command {
-            Command::Render => json!({
+            Command::Render | Command::Formats => json!({
                 "input": input, "format": format, "output": null, "error": e.json(),
                 "warnings": warnings, "engine": engine,
             }),
