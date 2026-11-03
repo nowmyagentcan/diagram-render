@@ -1,0 +1,36 @@
+{
+ "shapes": [],
+ "arrows": [
+  "label"
+ ],
+ "text": [
+  "Font 1: Quick brown fox",
+  "Font 2: Quick brown fox",
+  "Font 3: Quick brown fox",
+  "Font 5: Quick brown fox",
+  "Font 6: Quick brown fox",
+  "Font 7: Quick brown fox",
+  "Font 8: Quick brown fox",
+  "Font 9: Quick brown fox",
+  "Centred",
+  "two lines",
+  "Right",
+  "aligned text",
+  "Turned",
+  "In a box",
+  "Ünïcödé, Ελληνικά, Кириллица"
+ ],
+ "freedraw": [],
+ "frames": [
+  "Plan",
+  "clipped text inside",
+  "AI Frame",
+  "A rather long fra...",
+  "Empty Web-Embed",
+  "https://example.com/a",
+  "IFrame element"
+ ],
+ "small": [
+  "PNG"
+ ]
+}

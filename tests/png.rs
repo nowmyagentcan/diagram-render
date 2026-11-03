@@ -445,6 +445,7 @@ fn pngs_with_the_bundled_fonts_match_on_every_computer() {
         ("mermaid", "sequence", "mmd"),
         ("bpmn", "collaboration", "bpmn"),
         ("drawio", "labels", "drawio"),
+        ("excalidraw", "small", "excalidraw"),
     ] {
         let file = format!("{name}.{ext}");
         let source = fixture(&dir, kind, &file);

@@ -521,3 +521,39 @@ fn scenes_have_no_pages() {
         (2, &json!("page_not_supported"))
     );
 }
+
+#[test]
+fn renders_match_export_to_svg() {
+    // References: exportToSvg of @excalidraw/excalidraw 0.18.1 in Chromium, as greyscale PNGs. The
+    // bar is 5 %; ours are far under it, as strokes are the same, so a slip shows at once.
+    let labels: Value =
+        serde_json::from_str(&fs::read_to_string(fixture("refs/labels.json")).unwrap()).unwrap();
+    let dir = folder("excalidraw-references");
+    for (name, want) in labels.as_object().unwrap() {
+        let file = format!("{name}.excalidraw");
+        let source = fs::read(fixture(&file)).unwrap();
+        assert_eq!(
+            in_dir(&dir, &file, &source, &["-o", "out.svg"]).0,
+            0,
+            "{name}"
+        );
+        let svg = fs::read_to_string(dir.join("out.svg")).unwrap();
+        let doc = roxmltree::Document::parse(&svg).unwrap();
+        let ours: Vec<&str> = doc
+            .descendants()
+            .filter_map(|n| n.attribute("aria-label"))
+            .collect();
+        for label in want.as_array().unwrap() {
+            let label = label.as_str().unwrap();
+            assert!(ours.contains(&label), "{name}: {label} not in {ours:?}");
+        }
+        assert_eq!(
+            in_dir(&dir, &file, &source, &["-o", "out.png", "--scale", "1"]).0,
+            0
+        );
+        let ours = fs::read(dir.join("out.png")).unwrap();
+        let reference = fs::read(fixture(&format!("refs/{name}.png"))).unwrap();
+        let difference = blurred_difference(&ours, &reference, name, 4);
+        assert!(difference <= 0.01, "{name}: {:.2} %", difference * 100.0);
+    }
+}

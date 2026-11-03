@@ -428,7 +428,7 @@ fn renders_match_bpmn_js_within_three_percent() {
         assert_eq!(in_dir(&dir, &file, &source, &args).0, 0, "{name}");
         let ours = fs::read(dir.join("out.png")).unwrap();
         let reference = fs::read(fixture(&format!("refs/{name}.png"))).unwrap();
-        let difference = blurred_difference(&ours, &reference, name);
+        let difference = blurred_difference(&ours, &reference, name, 2);
         assert!(difference <= 0.03, "{name}: {:.2} %", difference * 100.0);
     }
 }
