@@ -666,7 +666,11 @@ fn installed(name: &str, engines: &[&str]) -> std::path::PathBuf {
     for engine in engines {
         std::fs::copy(&bin, dir.join("engines").join(exe(engine))).unwrap();
     }
-    bin
+    // The binary resolves its own path (macOS temp folders sit behind a /var symlink).
+    match cfg!(windows) {
+        true => bin,
+        false => bin.canonicalize().unwrap(),
+    }
 }
 
 /// Runs the copy `bin` in its own folder.
