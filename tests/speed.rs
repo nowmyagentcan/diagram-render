@@ -162,6 +162,88 @@ fn large_drawio() -> String {
     )
 }
 
+/// A PNG of noise of about 300 KB, different for each `seed`.
+fn noise_png(seed: u32) -> Vec<u8> {
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(280, 280).unwrap();
+    let mut x = seed.wrapping_mul(2_654_435_761) | 1;
+    for byte in pixmap.data_mut().chunks_mut(4) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        byte.copy_from_slice(&[x as u8, (x >> 8) as u8, (x >> 16) as u8, 255]);
+    }
+    pixmap.encode_png().unwrap()
+}
+
+/// `large.excalidraw`: 2,000 elements of every type, in a grid, and 5 embedded 300 KB PNGs.
+fn large_excalidraw() -> String {
+    use base64::Engine;
+    let files: Vec<String> = (0..5)
+        .map(|i| {
+            let png = base64::engine::general_purpose::STANDARD.encode(noise_png(i + 1));
+            format!(
+                r#""f{i}": {{"mimeType": "image/png", "dataURL": "data:image/png;base64,{png}"}}"#
+            )
+        })
+        .collect();
+    let mut elements = vec![];
+    for i in 0..2000 {
+        let (x, y) = ((i % 50) * 80, (i / 50) * 60);
+        let base = format!(
+            r##""id": "e{i}", "x": {x}, "y": {y}, "width": 64, "height": 48, "seed": {}, "backgroundColor": "#a5d8ff", "fillStyle": "{}""##,
+            i + 1,
+            ["hachure", "cross-hatch", "solid", "zigzag"][i % 4]
+        );
+        elements.push(match i % 8 {
+            0 => format!(r#"{{"type": "rectangle", {base}}}"#),
+            1 => format!(r#"{{"type": "diamond", {base}}}"#),
+            2 => format!(r#"{{"type": "ellipse", {base}}}"#),
+            3 => format!(r#"{{"type": "arrow", {base}, "points": [[0, 0], [32, 40], [64, 10]], "roundness": {{"type": 2}}}}"#),
+            4 => format!(r#"{{"type": "line", {base}, "points": [[0, 0], [64, 48]]}}"#),
+            5 => {
+                let points: Vec<String> = (0..40).map(|k| format!("[{}, {}]", k, (k * 7) % 40)).collect();
+                format!(r#"{{"type": "freedraw", {base}, "points": [{}], "simulatePressure": true}}"#, points.join(", "))
+            }
+            6 => format!(r#"{{"type": "text", {base}, "text": "Step {i}", "fontSize": 20, "fontFamily": 5}}"#),
+            7 if i < 40 => format!(r#"{{"type": "image", {base}, "fileId": "f{}"}}"#, i / 8),
+            _ => format!(r#"{{"type": "rectangle", {base}, "roundness": {{"type": 3}}}}"#),
+        });
+    }
+    format!(
+        r#"{{"type": "excalidraw", "elements": [{}], "files": {{{}}}}}"#,
+        elements.join(",\n"),
+        files.join(",")
+    )
+}
+
+#[test]
+#[ignore = "timing: run on a release build"]
+fn excalidraw_renders_within_its_targets() {
+    let dir = folder("speed-excalidraw");
+    fs::copy(
+        "tests/fixtures/excalidraw/small.excalidraw",
+        dir.join("small.excalidraw"),
+    )
+    .unwrap();
+    fs::write(dir.join("large.excalidraw"), large_excalidraw()).unwrap();
+    for (file, svg_target, png_extra) in [
+        ("small.excalidraw", 60, 300),
+        ("large.excalidraw", 1500, 2000),
+    ] {
+        let svg = median(&dir, &[file, "-o", "out.svg"]);
+        let png = median(&dir, &[file, "-o", "out.png"]);
+        println!("{file}: SVG {svg:.0?}, PNG at scale 2 {png:.0?}");
+        assert!(
+            svg <= Duration::from_millis(svg_target),
+            "{file} SVG {svg:?}"
+        );
+        assert!(
+            png <= svg + Duration::from_millis(png_extra),
+            "{file} PNG {png:?}"
+        );
+    }
+}
+
 #[test]
 #[ignore = "timing: run on a release build"]
 fn drawio_renders_within_its_targets() {

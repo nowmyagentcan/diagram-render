@@ -119,6 +119,7 @@ dependencies = [
  "base64",
  "flate2",
  "lexopt",
+ "png",
  "quick-xml",
  "resvg",
  "roxmltree 0.21.2",

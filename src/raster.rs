@@ -215,13 +215,28 @@ pub fn png(
         .ok_or_else(|| Error::internal(&format!("no {width}×{height} image can be made")))?;
     let s = scale as f32;
     resvg::render(&tree, Transform::from_scale(s, s), &mut pixmap.as_mut());
-    let bytes =
-        (pixmap.encode_png()).map_err(|e| Error::internal(&format!("PNG encoding: {e}")))?;
+    let bytes = encode(pixmap).map_err(|e| Error::internal(&format!("PNG encoding: {e}")))?;
     Ok(Png {
         bytes,
         width,
         height,
     })
+}
+
+/// `pixmap` as an 8-bit RGBA PNG. Past 16 MP the fast deflate takes over: on a 39 MP drawing
+/// it spent 0.1 s instead of 2.5 s, for a file twice the size.
+fn encode(pixmap: Pixmap) -> Result<Vec<u8>, png::EncodingError> {
+    let (width, height) = (pixmap.width(), pixmap.height());
+    let pixels = pixmap.take_demultiplied();
+    let mut bytes = vec![];
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    if u64::from(width) * u64::from(height) > 16_000_000 {
+        encoder.set_compression(png::Compression::Fast);
+    }
+    encoder.write_header()?.write_image_data(&pixels)?;
+    Ok(bytes)
 }
 
 /// A side of `css` pixels at `scale`, rounded up as the SVG's own size is.
