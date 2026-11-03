@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 lexopt = "0.3.2"
+quick-xml = "0.42.0"
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 
 [profile.release]

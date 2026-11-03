@@ -474,12 +474,18 @@ fn run(command: Command, args: Args) -> u8 {
     let format = diagram.format;
     let done = match target {
         None => engine::check(format, &mut engine, &task).map(|checked| (None, checked)),
-        Some(target) => engine::render(format, &mut engine, &task).map(|r| {
+        Some(target) => engine::render(format, &mut engine, &task).and_then(|r| {
+            let (svg, removed) = svg::clean(&String::from_utf8_lossy(&r.svg))
+                .map_err(|e| Error::internal(&format!("the engine's SVG isn't valid XML: {e}")))?;
+            let mut warnings = r.warnings;
+            if removed > 0 {
+                warnings.push(Warning::unsafe_content_removed(removed));
+            }
             let checked = engine::Checked {
                 errors: vec![],
-                warnings: r.warnings,
+                warnings,
             };
-            (Some((target, r.svg)), checked)
+            Ok((Some((target, svg)), checked))
         }),
     };
     if args.debug {
@@ -498,10 +504,10 @@ fn run(command: Command, args: Args) -> u8 {
     match made {
         None => checks(&name, &known, &checked.errors, args.json),
         Some(((target, to), svg)) => {
-            if let Err(e) = output::write(&target, &svg) {
+            if let Err(e) = output::write(&target, svg.as_bytes()) {
                 return failed(command, &name, &known, &e, args.json);
             }
-            let (width, height) = svg::size(&String::from_utf8_lossy(&svg));
+            let (width, height) = svg::size(&svg);
             let output = match &target {
                 Target::Stdout => "-".to_string(),
                 Target::File(p) => p.to_string_lossy().into_owned(),

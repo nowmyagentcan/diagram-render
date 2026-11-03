@@ -214,3 +214,22 @@ fn an_output_folder_that_doesnt_exist_is_write_failed() {
     };
     assert_eq!((code, &v["error"]["code"]), (3, &json!("write_failed")));
 }
+
+#[test]
+fn script_parts_never_reach_the_svg() {
+    let dir = folder("mermaid-unsafe");
+    let source = "%%{init: {\"securityLevel\": \"loose\"}}%%\nflowchart TD\n  A[\"<b onclick=alert(1)>x</b><img src=x onerror=alert(2)>\"] --> B\n  click B href \"javascript:alert(3)\"\n  click A call alert(4)\n";
+    let (code, out, _) = run_in(&dir, &["-", "-o", "x.svg", "--json"], source.as_bytes());
+    assert_eq!(code, 0);
+    let svg = fs::read_to_string(dir.join("x.svg"))
+        .unwrap()
+        .to_lowercase();
+    for part in ["onclick", "onerror", "javascript:", "<script", "src=\"x\""] {
+        assert!(!svg.contains(part), "{part}");
+    }
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["warnings"],
+        json!([{"code": "unsafe_content_removed", "message": "Removed 1 unsafe item (scripts, event handlers or javascript: links) from the SVG."}])
+    );
+}

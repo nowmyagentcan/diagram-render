@@ -50,6 +50,17 @@ impl Warning {
         }
     }
 
+    pub fn unsafe_content_removed(n: usize) -> Self {
+        let items = if n == 1 { "item" } else { "items" };
+        Self {
+            code: "unsafe_content_removed",
+            message: format!(
+                "Removed {n} unsafe {items} (scripts, event handlers or javascript: links) from the SVG."
+            ),
+            line: None,
+        }
+    }
+
     pub fn scale_ignored() -> Self {
         Self {
             code: "scale_ignored",
