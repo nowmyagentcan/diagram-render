@@ -125,71 +125,10 @@ const SAMPLES = [
 ];
 let file = null, seq = 0, url = null;
 
-// Sample answers until the server exists: an empty body, a line ending in "--", a plain .png, sfdp and draw.io pages.
-const SAMPLE_SVG = `<svg width="265pt" height="46pt"
- viewBox="0.00 0.00 265.00 46.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 42.3)">
-<polygon fill="white" stroke="none" points="-4,4 -4,-42.3 261.04,-42.3 261.04,4 -4,4"/>
-
-<g id="node1" class="node">
-<title>source</title>
-<path fill="none" stroke="black" d="M46.02,-38.3C46.02,-38.3 12,-38.3 12,-38.3 6,-38.3 0,-32.3 0,-26.3 0,-26.3 0,-14.3 0,-14.3 0,-8.3 6,-2.3 12,-2.3 12,-2.3 46.02,-2.3 46.02,-2.3 52.02,-2.3 58.02,-8.3 58.02,-14.3 58.02,-14.3 58.02,-26.3 58.02,-26.3 58.02,-32.3 52.02,-38.3 46.02,-38.3"/>
-<text xml:space="preserve" text-anchor="middle" x="29.01" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">source</text>
-</g>
-
-<g id="node2" class="node">
-<title>check</title>
-<path fill="none" stroke="black" d="M151.57,-38.3C151.57,-38.3 121.57,-38.3 121.57,-38.3 115.57,-38.3 109.57,-32.3 109.57,-26.3 109.57,-26.3 109.57,-14.3 109.57,-14.3 109.57,-8.3 115.57,-2.3 121.57,-2.3 121.57,-2.3 151.57,-2.3 151.57,-2.3 157.57,-2.3 163.57,-8.3 163.57,-14.3 163.57,-14.3 163.57,-26.3 163.57,-26.3 163.57,-32.3 157.57,-38.3 151.57,-38.3"/>
-<text xml:space="preserve" text-anchor="middle" x="136.57" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">check</text>
-</g>
-
-<g id="edge1" class="edge">
-<title>source&#45;&gt;check</title>
-<path fill="none" stroke="black" d="M58.51,-21.88C68.91,-22.29 80.77,-22.55 91.57,-22.3 93.75,-22.25 95.99,-22.19 98.25,-22.12"/>
-<polygon fill="black" stroke="black" points="98.15,-25.62 108.01,-21.74 97.88,-18.63 98.15,-25.62"/>
-</g>
-
-<g id="edge3" class="edge">
-<title>check&#45;&gt;source</title>
-<path fill="none" stroke="black" d="M109.14,-6.99C103.48,-4.71 97.43,-2.7 91.57,-1.5 84.23,0 76.51,-0.57 69.11,-2.24"/>
-<polygon fill="black" stroke="black" points="68.26,1.16 59.68,-5.05 70.26,-5.55 68.26,1.16"/>
-<text xml:space="preserve" text-anchor="middle" x="83.8" y="-5.7" font-family="Times New Roman,serif" font-size="14.00">fix</text>
-</g>
-
-<g id="node3" class="node">
-<title>render</title>
-<path fill="none" stroke="black" d="M245.04,-38.3C245.04,-38.3 212.57,-38.3 212.57,-38.3 206.57,-38.3 200.57,-32.3 200.57,-26.3 200.57,-26.3 200.57,-14.3 200.57,-14.3 200.57,-8.3 206.57,-2.3 212.57,-2.3 212.57,-2.3 245.04,-2.3 245.04,-2.3 251.04,-2.3 257.04,-8.3 257.04,-14.3 257.04,-14.3 257.04,-26.3 257.04,-26.3 257.04,-32.3 251.04,-38.3 245.04,-38.3"/>
-<text xml:space="preserve" text-anchor="middle" x="228.81" y="-16.1" font-family="Helvetica,sans-Serif" font-size="14.00">render</text>
-</g>
-
-<g id="edge2" class="edge">
-<title>check&#45;&gt;render</title>
-<path fill="none" stroke="black" d="M163.67,-20.3C171.54,-20.3 180.36,-20.3 188.88,-20.3"/>
-<polygon fill="black" stroke="black" points="188.68,-23.8 198.68,-20.3 188.68,-16.8 188.68,-23.8"/>
-</g>
-</g>
-</svg>`;
 async function render(body, name, options) {
-  await new Promise(r => setTimeout(r, 400));
-  const text = typeof body === "string" ? body : "", lines = text.split(/\r\n|\r|\n/);
-  const fail = (code, message, hint, line = null, column = null, excerpt = null) => ({ error: { code, message, hint, line, column, excerpt } });
-  if (/\.png$/i.test(name) && !/\.(drawio|excalidraw)\.png$/i.test(name)) return fail("unsupported_input", `${name} is an image with no draw.io or Excalidraw diagram inside.`, "Nothing to render; it's already an image.");
-  if (typeof body === "string" && !text.trim()) return fail("empty_input", "The diagram is empty.", "Write some diagram source, or check the file.");
-  const bad = lines.findIndex(l => /\S\s*--\s*$/.test(l));
-  if (bad >= 0) return fail("syntax_error", "Expecting 'SEMI', 'NEWLINE', 'SPACE', got 'EOF'", `Fix line ${bad + 1}, then run again.`, bad + 1, lines[bad].lastIndexOf("--") + 1, lines[bad]);
-  if (options.scale != null && !(options.scale >= 0.1 && options.scale <= 8)) return { error: { code: "invalid_option", message: "--scale must be between 0.1 and 8.", hint: "Try --scale 2." } };
-  const warnings = /layout\s*=\s*"?sfdp/.test(text) ? [{ code: "engine_warning", message: "Graphviz: sfdp laid this out without removing node overlaps (this build has no triangulation library), so nodes may overlap.", line: null }] : [];
-  const pages = /\.drawio$/i.test(name) || text.includes("<mxfile") ? ["Page-1", "Overview", "Network"].map((n, i) => ({ index: i + 1, name: n })) : [];
-  const pg = pages.length ? pages[(+options.page || 1) - 1] : null;
-  const stem = (name.replace(/(\.(drawio|excalidraw))?\.[^.]+$/i, "") || "diagram") + (pg && pg.index > 1 ? `-${pg.name}` : "");
-  const png = options.to === "png", s = png ? options.scale ?? 2 : null;
-  let blob = new Blob([SAMPLE_SVG], { type: "image/svg+xml" }), width = 354, height = 62;
-  if (png) {
-    const img = new Image(); img.src = URL.createObjectURL(blob); await img.decode();
-    const c = new OffscreenCanvas(width *= s, height *= s); c.getContext("2d").drawImage(img, 0, 0, width, height);
-    URL.revokeObjectURL(img.src); blob = await c.convertToBlob();
-  }
-  return { blob, result: { input: name || "-", output: `${stem}.${options.to}`, to: options.to, width, height, bytes: blob.size, scale: s, page: pg, pages, warnings, elapsed_ms: 213 } };
+  const r = await fetch("/api/render", { method: "POST", body, headers: { "x-file-name": encodeURIComponent(name), "x-options": JSON.stringify(options) } });
+  if (r.ok) return { blob: await r.blob(), result: JSON.parse(decodeURIComponent(r.headers.get("x-result"))) };
+  return r.json();
 }
 
 function el(tag, cls, text) {

@@ -11,6 +11,7 @@ publish = false
 base64 = "0.23.1"
 flate2 = "1.1.10"
 lexopt = "0.3.2"
+percent-encoding = "2.3.2"
 png = "0.18.1"
 quick-xml = "0.42.0"
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "macros", "transport-io", "schemars"] }

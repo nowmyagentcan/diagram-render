@@ -16,6 +16,7 @@ mod raster;
 mod run;
 mod svg;
 mod text;
+mod ui;
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Write};
@@ -101,6 +102,18 @@ Options:
   -h, --help             print help
 ";
 
+const UI_HELP: &str = "\
+Open the local web page.
+
+Usage: diagram-render ui [OPTIONS]
+
+Options:
+      --port <N>         port on 127.0.0.1, 1-65535 [default: a free one]
+      --no-open          don't open the browser
+      --debug            show engine command lines and full output
+  -h, --help             print help
+";
+
 const MCP_HELP: &str =
     "Run the MCP server on stdio, with the tools render_diagram and check_diagram.
 
@@ -116,6 +129,7 @@ enum Command {
     Render,
     Check,
     Formats,
+    Ui,
     Mcp,
 }
 
@@ -125,6 +139,7 @@ impl Command {
             Self::Render => "render",
             Self::Check => "check",
             Self::Formats => "formats",
+            Self::Ui => "ui",
             Self::Mcp => "mcp",
         }
     }
@@ -134,6 +149,7 @@ impl Command {
             Self::Render => HELP,
             Self::Check => CHECK_HELP,
             Self::Formats => FORMATS_HELP,
+            Self::Ui => UI_HELP,
             Self::Mcp => MCP_HELP,
         }
     }
@@ -142,10 +158,12 @@ impl Command {
     fn takes(self, option: &str) -> bool {
         let common = ["--json", "--debug", "--help"];
         let check = ["--format", "--page", "--timeout"];
+        let ui = ["--port", "--no-open"];
         match self {
-            Self::Render => true,
+            Self::Render => !ui.contains(&option),
             Self::Check => common.contains(&option) || check.contains(&option),
             Self::Formats => common.contains(&option),
+            Self::Ui => ui.contains(&option) || ["--debug", "--help"].contains(&option),
             Self::Mcp => ["--debug", "--help"].contains(&option),
         }
     }
@@ -157,6 +175,8 @@ struct Args {
     output: Option<OsString>,
     to: Option<To>,
     choices: Choices,
+    port: u16,
+    no_open: bool,
     json: bool,
     debug: bool,
 }
@@ -178,12 +198,17 @@ fn main() -> ExitCode {
         Some("render") => (Command::Render, &args[1..]),
         Some("check") => (Command::Check, &args[1..]),
         Some("formats") => (Command::Formats, &args[1..]),
+        Some("ui") => (Command::Ui, &args[1..]),
         Some("mcp") => (Command::Mcp, &args[1..]),
         _ => (Command::Render, &args[..]),
     };
     let code = match parse(command, rest) {
         Ok(Parsed::Print(text)) => finish(io::stdout().write_all(text.as_bytes()), 0),
         Ok(Parsed::Run(args)) if command == Command::Formats => formats(&args),
+        Ok(Parsed::Run(args)) if command == Command::Ui => {
+            let stop = "  (Ctrl+C to stop)";
+            served(ui::serve(args.port, !args.no_open, stop, args.debug))
+        }
         Ok(Parsed::Run(args)) if command == Command::Mcp => served(mcp::serve(args.debug)),
         Ok(Parsed::Run(args)) => run(command, args),
         Err(e) => usage(&e, json),
@@ -249,6 +274,8 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             ("--json", _) => args.json = true,
             ("--debug", _) => args.debug = true,
             ("--allow-network", _) => args.choices.allow_network = true,
+            ("--no-open", _) => args.no_open = true,
+            ("--port", _) => args.port = port(&string(&mut p, name)?)?,
             ("--output", _) => args.output = Some(p.value()?),
             ("--to", _) => args.to = Some(to(&string(&mut p, name)?)?),
             ("--format", _) => args.choices.format = format(&string(&mut p, name)?)?,
@@ -294,6 +321,8 @@ const OPTIONS: &[(&str, &str)] = &[
     ("--background", "--background white"),
     ("--page", "--page 2"),
     ("--allow-network", ""),
+    ("--port", "--port 8080"),
+    ("--no-open", ""),
     ("--timeout", "--timeout 120"),
     ("--json", ""),
     ("--debug", ""),
@@ -418,6 +447,17 @@ fn timeout(v: &str) -> Result<u64, Error> {
         _ => Err(Error::invalid_option(
             "--timeout must be a whole number of seconds from 1 to 600.",
             try_hint("--timeout"),
+        )),
+    }
+}
+
+/// `--port`: 1 to 65535.
+fn port(v: &str) -> Result<u16, Error> {
+    match v.parse::<u16>() {
+        Ok(p) if p > 0 && v.bytes().all(|b| b.is_ascii_digit()) => Ok(p),
+        _ => Err(Error::invalid_option(
+            "--port must be between 1 and 65535.",
+            try_hint("--port"),
         )),
     }
 }

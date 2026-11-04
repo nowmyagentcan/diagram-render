@@ -279,7 +279,8 @@ impl Error {
     pub fn exit_code(&self) -> u8 {
         match self.code {
             c if USAGE.contains(&c) => 2,
-            "engine_missing" | "engine_failed" | "timeout" | "write_failed" | "internal" => 3,
+            "engine_missing" | "engine_failed" | "timeout" | "write_failed" | "port_in_use"
+            | "internal" => 3,
             _ => 1,
         }
     }
@@ -617,6 +618,14 @@ impl Error {
             "write_failed",
             format!("Can't write {path}: {}.", reason(e)),
             "Check the folder exists and isn't read-only.",
+        )
+    }
+
+    pub fn port_in_use(port: u16) -> Self {
+        Self::new(
+            "port_in_use",
+            format!("Port {port} is in use."),
+            "Leave out --port to use a free one.",
         )
     }
 
