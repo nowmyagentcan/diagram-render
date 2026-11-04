@@ -86,7 +86,7 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - draw.io vendor shape libraries (such as `mxgraph.aws4.*`) and stencils are drawn as dashed boxes with their labels, and the run warns about them.
 - A BPMN file with no diagram section isn't laid out; open it in a BPMN modeler and save it to add one.
 - Text in PNGs uses the bundled fonts. Characters they don't have, such as Chinese, Japanese or Korean, come from this computer's fonts, with a warning, so those images can differ between computers.
-- Graphviz `image=` attributes depend on the system: Graphviz needs an image library to read their size, and only the Windows build has one.
+- Graphviz `image=` files stay links in the SVG and are left out of PNGs.
 - Not read: PlantUML, Visio, or Markdown files with diagrams inside. Not written: PDF, JPEG or animated SVG.
 - It makes no network requests. The one exception is D2 with `--allow-network`, which fetches the image URLs written in your diagram. Without it, D2 SVGs keep those images as links, and D2 PNGs that need them stop with an error saying so.
 
