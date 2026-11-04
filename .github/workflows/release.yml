@@ -23,7 +23,7 @@ jobs:
           - { os: ubuntu-24.04-arm, target: linux-arm64, triple: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.os }}
     env:
-      RUSTFLAGS: ${{ runner.os != 'macOS' && '-C target-feature=+crt-static' || '' }}
+      RUSTFLAGS: ${{ !startsWith(matrix.target, 'macos') && '-C target-feature=+crt-static' || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
