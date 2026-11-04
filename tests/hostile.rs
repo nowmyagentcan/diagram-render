@@ -368,7 +368,7 @@ fn a_browser_that_hangs_up_frees_the_page_for_the_next_render() {
 }
 
 #[test]
-#[ignore = "known bug: T1-07"]
+#[ignore = "known bug: T1-03"]
 fn a_page_render_that_crashes_leaves_the_server_answering() {
     let (mut child, port) = page();
     let mut stream = upload(port, "x.excalidraw", rounded_rectangle().as_bytes());
@@ -476,11 +476,18 @@ fn many_filled_shapes_in_a_small_file_have_a_limit() {
 #[test]
 #[ignore = "known bug: R1-004"]
 fn one_filled_shape_past_any_screen_has_a_limit() {
+    let dir = folder("hostile-one-shape");
     for size in [4294967296.0, 1e38] {
         let rectangle = scene(json!({"type": "rectangle", "x": 0, "y": 0, "width": size,
                                      "height": 100, "backgroundColor": "#ffff00",
                                      "fillStyle": "cross-hatch"}));
-        survives("x.excalidraw", rectangle.as_bytes(), &[]);
+        fs::write(dir.join("x.excalidraw"), rectangle).unwrap();
+        // 200 bytes of scene today take 10 s, 900 MB and write a 141 MB SVG.
+        let args = ["x.excalidraw", "--json", "--timeout", "1"];
+        assert!(
+            bounded(&dir, &args, Duration::from_secs(5)).is_some(),
+            "{size}"
+        );
     }
 }
 
@@ -491,37 +498,15 @@ fn huge_png(side: u32) -> Vec<u8> {
     for _ in 0..side {
         zlib.write_all(&row).unwrap();
     }
-    let data = zlib.finish().unwrap();
     let mut out = vec![];
-    let mut encoder = png::Encoder::new(&mut out, 1, 1);
+    let mut encoder = png::Encoder::new(&mut out, side, side);
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::One);
-    encoder.write_header().unwrap().finish().unwrap();
-    // The encoder wrote a 1×1 file; only its signature is kept.
-    let mut file = out[..8].to_vec();
-    let chunk = |file: &mut Vec<u8>, kind: &[u8], body: &[u8]| {
-        file.extend((body.len() as u32).to_be_bytes());
-        file.extend(kind);
-        file.extend(body);
-        file.extend(crc32(&[kind, body].concat()).to_be_bytes());
-    };
-    let mut header = side.to_be_bytes().repeat(2);
-    header.extend([1, 0, 0, 0, 0]);
-    chunk(&mut file, b"IHDR", &header);
-    chunk(&mut file, b"IDAT", &data);
-    chunk(&mut file, b"IEND", b"");
-    file
-}
-
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = u32::MAX;
-    for b in bytes {
-        crc ^= u32::from(*b);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
-        }
-    }
-    !crc
+    let mut writer = encoder.write_header().unwrap();
+    let data = zlib.finish().unwrap();
+    writer.write_chunk(png::chunk::IDAT, &data).unwrap();
+    drop(writer);
+    out
 }
 
 #[test]
@@ -678,22 +663,17 @@ fn zeros(n: usize) -> Vec<u8> {
     zlib.finish().unwrap()
 }
 
-/// A PNG of one pixel holding `chunk` before its end.
-fn png_with(kind: &[u8], body: &[u8]) -> Vec<u8> {
+/// A PNG of one pixel holding a chunk of `kind`.
+fn png_with(kind: [u8; 4], body: &[u8]) -> Vec<u8> {
     let mut out = vec![];
     let mut encoder = png::Encoder::new(&mut out, 1, 1);
     encoder.set_color(png::ColorType::Grayscale);
-    encoder
-        .write_header()
-        .unwrap()
-        .write_image_data(&[0])
+    let mut writer = encoder.write_header().unwrap();
+    writer
+        .write_chunk(png::chunk::ChunkType(kind), body)
         .unwrap();
-    let end = out.len() - 12;
-    let mut chunk = (body.len() as u32).to_be_bytes().to_vec();
-    chunk.extend(kind);
-    chunk.extend(body);
-    chunk.extend(crc32(&[kind, body].concat()).to_be_bytes());
-    out.splice(end..end, chunk);
+    writer.write_image_data(&[0]).unwrap();
+    drop(writer);
     out
 }
 
@@ -706,7 +686,7 @@ fn a_bomb_in_any_compressed_wrapper_is_too_large() {
     ] {
         let ztxt = [key, &[0, 0], &bomb].concat();
         let itxt = [key, &[0, 1, 0, 0, 0], &bomb].concat();
-        for (kind, body) in [(&b"zTXt"[..], ztxt), (&b"iTXt"[..], itxt)] {
+        for (kind, body) in [(*b"zTXt", ztxt), (*b"iTXt", itxt)] {
             let v = survives(name, &png_with(kind, &body), &[]);
             assert_eq!(v["error"]["code"], "too_large", "{name} {kind:?}: {v}");
         }
