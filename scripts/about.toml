@@ -1,0 +1,16 @@
+# cargo about generate --locked -c scripts/about.toml scripts/about.hbs -o THIRD-PARTY-LICENSES.txt
+accepted = ["Apache-2.0", "MIT", "Unicode-3.0", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Zlib", "BSL-1.0", "0BSD", "MIT-0", "CC0-1.0", "Unlicense", "Apache-2.0 WITH LLVM-exception"]
+targets = ["x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }
+
+# brotli-decompressor (BSD-3-Clause or MIT) ships the BSD-3-Clause text with its copyright line.
+[brotli-decompressor.clarify]
+license = "BSD-3-Clause"
+files = [{ path = "LICENSE", checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae" }]
+
+# wuff ships no licence file; its repository's LICENSE (MIT) covers it.
+[wuff.clarify]
+license = "MIT"
+git = [{ path = "LICENSE", checksum = "4b373ba4395e35d44ba1f41202c179b57ca3c5ba5e4a1aaafa1547aede7e1eb7" }]

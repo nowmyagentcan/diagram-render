@@ -1,0 +1,86 @@
+diagram-render
+Copyright 2026 nowmyagentcan
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+BUNDLED ENGINES
+
+Each release archive holds these three programs in engines/. Each is a separate,
+unmodified executable that diagram-render runs as its own process; none is linked
+into diagram-render. Their licences and notices are in licenses/, as their projects
+ship them.
+
+merman-cli 0.9.3 (Mermaid)
+  Licence: MIT OR Apache-2.0; the executable contains code under MPL-2.0 (such as
+  cssparser) and EPL-2.0 (ELK).
+  Notices: licenses/merman/
+  Source: https://github.com/Latias94/merman/tree/v0.9.3
+  Commit: 3b915f69c02d55b873d252cf6c8a6048e7f3427d
+  Windows and macOS archives hold the project's own release. Linux archives hold its
+  unmodified crate merman-cli 0.9.3 built as a static executable by
+  scripts/fetch-engines.sh.
+
+D2 0.9.0
+  Licence: MPL-2.0; contains parts under EPL-2.0, MIT, Apache-2.0 and OFL-1.1.
+  Notices: licenses/d2/
+  Source: https://github.com/d2lang/d2/tree/v0.9.0
+  Commit: d5a51743b6d5c00f1ec6f8340003f5d5a6ba4eda
+
+Graphviz 16.1.0 (dot)
+  Licence: EPL-2.0. Built with expat 2.10.0 (MIT).
+  Notices: licenses/graphviz/
+  Source: https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.xz
+  SHA-256: 0f661718f3e5268dc3bad0fb53ab646605d26db70f4080799aff1dc2f61783c3
+  Built from that unmodified source by scripts/fetch-engines.sh in this repository.
+  expat source: https://github.com/libexpat/libexpat/releases/download/R_2_10_0/expat-2.10.0.tar.xz
+
+BUNDLED FONTS
+
+fonts/ holds the Liberation 2.1.5 fonts (OFL-1.1) and, in fonts/excalidraw/, the fonts
+of @excalidraw/excalidraw 0.18.1: Excalifont, Virgil, Cascadia Code, Nunito and Lilita
+One (OFL-1.1) and Comic Shanns (MIT). All are unmodified; their licences are in
+licenses/fonts/.
+
+RUST CRATES
+
+licenses/THIRD-PARTY-LICENSES.txt lists every crate compiled into diagram-render, with
+its licence.
+
+CODE PORTED INTO THIS REPOSITORY
+
+The draw.io renderer in src/drawio/ is written from the edge styles, perimeters, shapes
+and default styles of draw.io and mxGraph, under the Apache License, Version 2.0:
+
+  Copyright (c) 2006-2015, JGraph Holdings Ltd
+  Copyright (c) 2006-2015, draw.io AG
+  https://github.com/jgraph/drawio
+
+The Excalidraw renderer in src/excalidraw.rs and src/excalidraw/ is ported from the
+following projects, and the page and the Windows icon use Phosphor Icons, all under the
+MIT licence below:
+
+  Excalidraw 0.18.1: Copyright (c) 2020 Excalidraw
+  rough.js 4.6.4: Copyright (c) 2019 Preet Shihn
+  hachure-fill 0.5.2: Copyright (c) 2023 Preet Shihn
+  points-on-curve 0.2.0: Copyright (c) 2020 Preet Shihn
+  points-on-path 0.2.1: Copyright (c) 2020 Preet
+  perfect-freehand 1.2.0: Copyright (c) 2021 Stephen Ruiz Ltd
+  Phosphor Icons 2.1.1: Copyright (c) 2023 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
