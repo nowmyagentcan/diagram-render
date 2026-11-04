@@ -268,3 +268,56 @@ fn drawio_renders_within_its_targets() {
         );
     }
 }
+
+/// `large.dot`: a digraph of 1,000 nodes and 2,000 edges in 20 clusters.
+fn large_dot() -> String {
+    let mut text = String::from("digraph large {\n");
+    for cluster in 0..20 {
+        let _ = writeln!(
+            text,
+            "  subgraph cluster_{cluster} {{ label=\"Cluster {cluster}\""
+        );
+        for i in cluster * 50..(cluster + 1) * 50 {
+            let _ = writeln!(text, "    n{i} [label=\"Node {i}\"]");
+        }
+        let _ = writeln!(text, "  }}");
+    }
+    for i in 0..2000 {
+        let _ = writeln!(text, "  n{} -> n{}", i % 1000, (i * 37 + 11) % 1000);
+    }
+    text + "}\n"
+}
+
+/// `large.d2`: 200 shapes in 5 containers and 300 connections.
+fn large_d2() -> String {
+    let mut text = String::new();
+    for i in 0..200 {
+        let _ = writeln!(text, "c{}.n{i}: Node {i}", i % 5);
+    }
+    for i in 0..300 {
+        let (a, b) = (i % 200, (i * 7 + 3) % 200);
+        let _ = writeln!(text, "c{}.n{a} -> c{}.n{b}", a % 5, b % 5);
+    }
+    text
+}
+
+#[test]
+#[ignore = "timing: run on a release build"]
+fn engines_render_within_their_targets() {
+    let dir = folder("speed-engines");
+    let (_, _, _) = run_in(&dir, &["--version"], b"");
+    println!("--version: {:?}", median(&dir, &["--version"]));
+    for (file, text) in [
+        ("large.mmd", large_mermaid()),
+        ("large.dot", large_dot()),
+        ("large.d2", large_d2()),
+    ] {
+        fs::write(dir.join(file), text).unwrap();
+        for to in ["out.svg", "out.png"] {
+            let start = Instant::now();
+            let (code, out, err) = run_in(&dir, &[file, "-o", to], b"");
+            assert_eq!(code, 0, "{file}: {err}");
+            println!("{file} -> {to}: {:?} {}", start.elapsed(), out.trim());
+        }
+    }
+}

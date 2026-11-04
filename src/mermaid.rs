@@ -84,6 +84,9 @@ fn run(
         "--operation-timeout-ms",
         &ms,
         "--quiet",
+        // Its budgets stop a flowchart of 300 nodes; --timeout is what bounds a render here.
+        "--resource-profile",
+        "unbounded-for-trusted-input",
     ];
     let fonts = fonts.iter().map(String::as_str);
     let args: Vec<&str> = common

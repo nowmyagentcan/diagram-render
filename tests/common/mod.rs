@@ -181,3 +181,22 @@ pub fn codes(v: &Value) -> Vec<&str> {
     let all = v["warnings"].as_array().unwrap();
     all.iter().map(|w| w["code"].as_str().unwrap()).collect()
 }
+
+/// `large.mmd`: a flowchart of 300 nodes and 450 edges in 10 subgraphs.
+pub fn large_mermaid() -> String {
+    let mut text = String::from("flowchart TD\n");
+    for group in 0..10 {
+        text += &format!("  subgraph g{group}\n");
+        for i in group * 30..(group + 1) * 30 {
+            text += &format!("    n{i}[Node {i}]\n");
+        }
+        text += &format!("  end\n");
+    }
+    for i in 0..299 {
+        text += &format!("  n{i} --> n{}\n", i + 1);
+    }
+    for i in 0..151 {
+        text += &format!("  n{} --> n{}\n", i * 2 % 300, (i * 7 + 13) % 300);
+    }
+    text
+}

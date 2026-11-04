@@ -231,3 +231,14 @@ fn script_parts_never_reach_the_svg() {
     let v: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["warnings"], json!([]));
 }
+
+#[test]
+fn a_flowchart_of_300_nodes_renders() {
+    let dir = folder("mermaid-large");
+    for out in ["large.svg", "large.png"] {
+        let args = ["-", "--format", "mermaid", "-o", out];
+        let (code, _, err) = run_in(&dir, &args, large_mermaid().as_bytes());
+        assert_eq!(code, 0, "{err}");
+        assert!(dir.join(out).is_file());
+    }
+}
