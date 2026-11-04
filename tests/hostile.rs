@@ -822,6 +822,22 @@ fn a_broken_image_url_says_so_in_svg_and_png_alike() {
 }
 
 #[test]
+#[ignore = "known bug: T1-06"]
+fn an_answer_that_is_no_image_fails_the_svg_as_it_fails_the_png() {
+    let dir = folder("hostile-not-image");
+    for head in [
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 6\r\nConnection: close\r\n\r\n<html>",
+        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    ] {
+        let url = answering(head);
+        let source = format!("a: {{shape: image; icon: {url}}}\n");
+        fs::write(dir.join("x.d2"), source).unwrap();
+        let (code, text, _) = run_in(&dir, &["x.d2", "--json", "--allow-network"], b"");
+        assert_eq!(code, 1, "{text}");
+    }
+}
+
+#[test]
 fn allow_network_follows_a_redirect_and_stops_at_a_loop() {
     let dir = folder("hostile-redirect");
     let looping = answering(
