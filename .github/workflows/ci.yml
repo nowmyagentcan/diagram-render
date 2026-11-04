@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check licenses
-      - name: engines.lock pins exactly merman 0.9.3, d2 0.9.0, Graphviz 16.1.0, expat 2.10.0 and Liberation 2.1.5
+      - name: engines.lock pins exactly merman 0.9.3, d2 0.9.0, Graphviz 16.1.0, expat 2.10.0, Liberation 2.1.5 and Excalidraw 0.18.1
         run: |
-          got=$(awk '!/^#/ { sub(/-(crate|notices)$/, "", $1); print $1, $2 }' scripts/engines.lock | sort -u | paste -sd,)
-          test "$got" = "d2 0.9.0,expat 2.10.0,graphviz 16.1.0,liberation 2.1.5,merman 0.9.3"
+          got=$(awk '!/^#|^license-/ { sub(/-(crate|notices)$/, "", $1); print $1, $2 }' scripts/engines.lock | sort -u | paste -sd,)
+          test "$got" = "d2 0.9.0,excalidraw 0.18.1,expat 2.10.0,graphviz 16.1.0,liberation 2.1.5,merman 0.9.3"
