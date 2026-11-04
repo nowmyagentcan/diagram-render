@@ -9,6 +9,7 @@ mod engine;
 mod error;
 mod excalidraw;
 mod input;
+mod interactive;
 mod mcp;
 mod mermaid;
 mod output;
@@ -19,7 +20,7 @@ mod text;
 mod ui;
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::process::ExitCode;
 use std::thread;
@@ -32,6 +33,9 @@ use output::{Target, To};
 use run::{Choices, Known, Opened, Source, Stopped};
 use serde_json::json;
 use text::{Look, Made};
+
+/// What the tool does, in the words of the page, the banner and `--help`.
+const SENTENCE: &str = "Render Mermaid, DOT, D2, BPMN, draw.io and Excalidraw diagrams.";
 
 const HELP: &str = "\
 Render Mermaid, DOT, D2, BPMN, draw.io and Excalidraw diagrams.
@@ -188,6 +192,16 @@ enum Parsed {
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if args.is_empty() {
+        if double_clicked() {
+            let dot = Look::stdout().pick("·", "-");
+            let stop = format!(" {dot} close this window to stop.");
+            return ExitCode::from(served(ui::serve(0, true, &stop, false)));
+        }
+        if io::stdin().is_terminal() && io::stdout().is_terminal() {
+            return ExitCode::from(interact());
+        }
+    }
     // A usage error is JSON when --json comes before any `--`, wherever the error is.
     let json = args
         .iter()
@@ -214,6 +228,36 @@ fn main() -> ExitCode {
         Err(e) => usage(&e, json),
     };
     ExitCode::from(code)
+}
+
+/// Whether Explorer started this process: it then has a console to itself, while a terminal
+/// shares its console with the shell.
+#[cfg(windows)]
+fn double_clicked() -> bool {
+    use windows::Win32::System::Console::GetConsoleProcessList;
+    let mut ids = [0u32; 2];
+    // SAFETY: the call writes at most `ids.len()` process ids into `ids`.
+    unsafe { GetConsoleProcessList(&mut ids) == 1 }
+}
+
+#[cfg(not(windows))]
+fn double_clicked() -> bool {
+    false
+}
+
+/// Interactive mode: every line renders with the defaults, beside its input.
+fn interact() -> u8 {
+    let render = |file: &str, to: To| {
+        let args = Args {
+            to: Some(to),
+            ..Args::default()
+        };
+        render(OsStr::new(file), &args)
+    };
+    let (mut out, mut err) = (io::stdout(), io::stderr());
+    let looks = (Look::stdout(), Look::stderr());
+    let session = interactive::run(io::stdin().lock(), &mut out, &mut err, looks, render);
+    finish(session, 0)
 }
 
 /// The exit code of a server that ended; what stopped it, on stderr.

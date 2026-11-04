@@ -4,6 +4,8 @@
 
 use std::env;
 use std::io::{self, IsTerminal, Write};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::thread;
 use std::time::Duration;
 
 use crate::detect::Format;
@@ -12,11 +14,15 @@ use crate::error::{Error, Warning};
 use crate::output::To;
 use crate::run::Stopped;
 
-const DIM: &str = "2";
-const BOLD: &str = "1";
+pub const DIM: &str = "2";
+pub const BOLD: &str = "1";
 const RED: &str = "31";
 const YELLOW: &str = "33";
 const GREEN: &str = "32";
+
+/// How long a render runs before the spinner shows, and how long each frame stays.
+const SPIN_AFTER: Duration = Duration::from_millis(150);
+const FRAME: Duration = Duration::from_millis(80);
 
 /// How one stream shows text.
 #[derive(Debug, Clone, Copy, Default)]
@@ -43,7 +49,7 @@ impl Look {
     }
 
     /// `s` in the SGR style `sgr` when colour is on.
-    fn paint(self, sgr: &str, s: &str) -> String {
+    pub fn paint(self, sgr: &str, s: &str) -> String {
         if self.colour {
             format!("\x1b[{sgr}m{s}\x1b[0m")
         } else {
@@ -52,7 +58,7 @@ impl Look {
     }
 
     /// `unicode`, or `ascii` where the console can't show it.
-    fn pick(self, unicode: &'static str, ascii: &'static str) -> &'static str {
+    pub fn pick(self, unicode: &'static str, ascii: &'static str) -> &'static str {
         if self.ascii { ascii } else { unicode }
     }
 }
@@ -156,12 +162,60 @@ pub fn error(w: &mut impl Write, look: Look, input: Option<&str>, e: &Error) -> 
     writeln!(w, "  {}", look.paint(DIM, &escape(&e.hint)))
 }
 
+/// `✗ message` and its hint, for what isn't about any file.
+pub fn plain_error(w: &mut impl Write, look: Look, message: &str, hint: &str) -> io::Result<()> {
+    let mark = look.paint(RED, look.pick("✗", "x"));
+    let message = look.paint(BOLD, &escape(message));
+    writeln!(w, "{mark} {message}")?;
+    writeln!(w, "  {}", look.paint(DIM, hint))
+}
+
 /// `! input[:line]: message`.
 pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -> io::Result<()> {
     let mark = look.paint(YELLOW, "!");
     let line = warning.line.map(|l| format!(":{l}")).unwrap_or_default();
     let message = escape(&warning.message);
     writeln!(w, "{mark} {}{line}: {message}", escape(input))
+}
+
+/// Runs `work`; when it takes over 150 ms and stderr is a terminal, `⠋ Rendering {file}…` spins on
+/// stderr meanwhile and is erased before this returns.
+pub fn spin<T>(look: Look, file: &str, work: impl FnOnce() -> T) -> T {
+    if !io::stderr().is_terminal() {
+        return work();
+    }
+    let (stop, stopped) = mpsc::channel();
+    let line = format!("Rendering {}{}", escape(file), look.pick("…", "..."));
+    thread::scope(|s| {
+        s.spawn(|| spinner(io::stderr(), look, &line, stopped));
+        let result = work();
+        drop(stop);
+        result
+    })
+}
+
+/// Draws `line` behind a turning frame until `stopped` ends, then erases it.
+fn spinner(mut w: impl Write, look: Look, line: &str, stopped: Receiver<()>) {
+    let frames: &[&str] = if look.ascii {
+        &["-", "\\", "|", "/"]
+    } else {
+        &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    };
+    let mut drawn = false;
+    for (i, frame) in frames.iter().cycle().enumerate() {
+        let wait = if i == 0 { SPIN_AFTER } else { FRAME };
+        if stopped.recv_timeout(wait) != Err(RecvTimeoutError::Timeout) {
+            break;
+        }
+        let text = look.paint(DIM, &format!("  {frame} {line}"));
+        if write!(w, "\r{text}").and_then(|()| w.flush()).is_err() {
+            return;
+        }
+        drawn = true;
+    }
+    if drawn {
+        let _ = write!(w, "\r\x1b[K");
+    }
 }
 
 /// The warnings of a stopped run, then its error.

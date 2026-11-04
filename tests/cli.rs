@@ -172,6 +172,9 @@ fn closed_stdout_or_stderr_ends_quietly_with_the_run_s_code() {
         (&["formats"], 0),
         (&["formats", "--json"], 0),
         (&["formats", "--debug"], 0),
+        (&["missing.mmd", "--debug"], 1),
+        (&["ui", "--help"], 0),
+        (&["mcp", "--help"], 0),
     ];
     for (args, want) in cases {
         let out = cmd(args).stdout(closed()).output().unwrap();

@@ -402,3 +402,31 @@ fn a_closed_stdout_ends_the_server_quietly() {
     assert_eq!(out.status.code(), Some(0));
     assert!(!String::from_utf8_lossy(&out.stderr).contains("panicked"));
 }
+
+/// Started from Explorer it has a console to itself, so it opens the page. The `cmd.exe` beside
+/// the copy stands in for the one that would open a browser.
+#[cfg(windows)]
+#[test]
+fn a_double_click_on_windows_starts_the_page() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+    let bin = installed("double-click", &[]);
+    fs::copy(&bin, bin.with_file_name("cmd.exe")).unwrap();
+    let mut child = Command::new(&bin)
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(line.starts_with("Open http://127.0.0.1:"), "{line:?}");
+    assert!(
+        line.ends_with(" · close this window to stop.\n"),
+        "{line:?}"
+    );
+}
