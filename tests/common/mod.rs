@@ -58,11 +58,19 @@ pub fn run_in(dir: &Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) 
 /// Runs `cmd` in `dir` with `stdin` as input: exit code, stdout and stderr.
 pub fn feed(mut cmd: Command, dir: &Path, stdin: &[u8]) -> (i32, String, String) {
     use std::io::Write;
-    let mut child = (cmd.current_dir(dir).stdin(Stdio::piped()))
+    (cmd.current_dir(dir).stdin(Stdio::piped()))
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    // A fresh copy of the binary is busy on Linux while a sibling test's fork still holds its
+    // write handle, until that child's exec closes it.
+    let mut child = loop {
+        match cmd.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            spawned => break spawned.unwrap(),
+        }
+    };
     let mut pipe = child.stdin.take().unwrap();
     let stdin = stdin.to_vec();
     let feeder = std::thread::spawn(move || {
