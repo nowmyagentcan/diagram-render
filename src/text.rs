@@ -9,6 +9,8 @@ use std::time::Duration;
 use crate::detect::Format;
 use crate::engine::{Page, Probe};
 use crate::error::{Error, Warning};
+use crate::output::To;
+use crate::run::Stopped;
 
 const DIM: &str = "2";
 const BOLD: &str = "1";
@@ -162,27 +164,34 @@ pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -
     writeln!(w, "{mark} {}{line}: {message}", escape(input))
 }
 
+/// The warnings of a stopped run, then its error.
+pub fn stopped(w: &mut impl Write, look: Look, input: &str, s: &Stopped) -> io::Result<()> {
+    (s.known.warnings.iter()).try_for_each(|x| warning(w, look, input, x))?;
+    error(w, look, Some(input), &s.error)
+}
+
 /// What a render made.
-pub struct Made<'a> {
-    pub input: &'a str,
-    pub output: &'a str,
+pub struct Made {
+    pub input: String,
+    pub output: String,
+    pub to: To,
     pub width: u32,
     pub height: u32,
     pub bytes: usize,
     /// PNG pixels per CSS pixel; `None` for SVG.
     pub scale: Option<f64>,
     pub took: Duration,
-    pub page: Option<&'a Page>,
-    pub pages: &'a [Page],
+    pub page: Option<Page>,
+    pub pages: Vec<Page>,
 }
 
 /// `✓ flow.mmd → flow.svg  1180×640  18 KB  0.21 s`.
 pub fn rendered(w: &mut impl Write, look: Look, m: &Made) -> io::Result<()> {
     let mark = look.paint(GREEN, look.pick("✓", "ok"));
     let arrow = look.pick("→", "->");
-    let output = look.paint(BOLD, &escape(m.output));
+    let output = look.paint(BOLD, &escape(&m.output));
     let times = look.pick("×", "x");
-    let (input, w_, h) = (escape(m.input), m.width, m.height);
+    let (input, w_, h) = (escape(&m.input), m.width, m.height);
     let (size, secs) = (size(m.bytes), seconds(m.took));
     writeln!(
         w,
