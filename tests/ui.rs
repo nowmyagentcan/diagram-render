@@ -6,7 +6,6 @@ mod common;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 use common::*;
@@ -132,15 +131,6 @@ impl Drop for Server {
         self.child.kill().unwrap();
         self.child.wait().unwrap();
     }
-}
-
-fn fixture(path: &str) -> Vec<u8> {
-    fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
-            .join(path),
-    )
-    .unwrap()
 }
 
 #[test]
@@ -429,4 +419,18 @@ fn a_double_click_on_windows_starts_the_page() {
         line.ends_with(" · close this window to stop.\n"),
         "{line:?}"
     );
+}
+
+#[test]
+fn every_file_name_renders_through_the_page() {
+    let server = Server::start();
+    for (name, format, path) in VARIANTS {
+        for to in ["svg", "png"] {
+            let options = format!(r#"{{"to":"{to}"}}"#);
+            let (status, report, image) = server.render(name, &options, &fixture(path));
+            assert_eq!(status, 200, "{name} {to}: {report}");
+            assert_eq!(report["format"], format, "{name} {to}");
+            assert!(!image.is_empty());
+        }
+    }
 }

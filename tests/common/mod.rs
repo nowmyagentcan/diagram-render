@@ -200,3 +200,48 @@ pub fn large_mermaid() -> String {
     }
     text
 }
+
+/// Every file name the tool knows, with its format and a fixture of that kind.
+pub const VARIANTS: [(&str, &str, &str); 16] = [
+    ("x.mmd", "mermaid", "mermaid/flowchart.mmd"),
+    ("x.mermaid", "mermaid", "mermaid/flowchart.mmd"),
+    ("x.dot", "dot", "dot/clusters.dot"),
+    ("x.gv", "dot", "dot/clusters.dot"),
+    ("x.d2", "d2", "d2/containers.d2"),
+    ("x.bpmn", "bpmn", "bpmn/activities.bpmn"),
+    ("x.bpmn2", "bpmn", "bpmn/activities.bpmn"),
+    ("x.drawio", "drawio", "drawio/pages.drawio"),
+    ("x.dio", "drawio", "drawio/pages.drawio"),
+    ("x.drawio.xml", "drawio", "drawio/pages.drawio"),
+    ("x.drawio.svg", "drawio", "drawio/board.drawio.svg"),
+    ("x.drawio.png", "drawio", "drawio/board.drawio.png"),
+    ("x.excalidraw", "excalidraw", "excalidraw/small.excalidraw"),
+    (
+        "x.excalidraw.json",
+        "excalidraw",
+        "excalidraw/small.excalidraw",
+    ),
+    (
+        "x.excalidraw.svg",
+        "excalidraw",
+        "excalidraw/small.excalidraw.svg",
+    ),
+    (
+        "x.excalidraw.png",
+        "excalidraw",
+        "excalidraw/small.excalidraw.png",
+    ),
+];
+
+/// The bytes of `tests/fixtures/<path>`.
+pub fn fixture(path: &str) -> Vec<u8> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    std::fs::read(root.join(path)).unwrap()
+}
+
+/// The sorted keys of a JSON object.
+pub fn keys(v: &Value) -> Vec<&str> {
+    let mut keys: Vec<_> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    keys
+}

@@ -729,3 +729,113 @@ fn formats_takes_only_its_own_options() {
             .starts_with("List the formats and whether each engine runs here.\n")
     );
 }
+
+#[test]
+fn every_file_name_is_read_by_its_extension_in_any_case() {
+    let dir = folder("variants");
+    for (name, format, path) in VARIANTS {
+        let upper = name.to_uppercase();
+        for file in [name, upper.as_str()] {
+            std::fs::write(dir.join(file), fixture(path)).unwrap();
+            let (code, out, _) = run_in(&dir, &["check", file, "--json"], b"");
+            let v: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(
+                (code, v["format"].as_str()),
+                (0, Some(format)),
+                "{file}: {out}"
+            );
+            for output in ["out.svg", "out.png"] {
+                let (code, out, _) = run_in(&dir, &[file, "-o", output, "--json"], b"");
+                assert_eq!(code, 0, "{file} {output}: {out}");
+            }
+        }
+    }
+}
+
+#[test]
+fn json_answers_hold_the_documented_keys_and_nothing_else() {
+    let render = [
+        "bytes",
+        "diagram_type",
+        "elapsed_ms",
+        "engine",
+        "format",
+        "height",
+        "input",
+        "output",
+        "page",
+        "pages",
+        "scale",
+        "to",
+        "warnings",
+        "width",
+    ];
+    let failure = ["engine", "error", "format", "input", "output", "warnings"];
+    let error = ["code", "column", "excerpt", "hint", "line", "message"];
+    let check = [
+        "diagram_type",
+        "engine",
+        "errors",
+        "format",
+        "input",
+        "valid",
+        "warnings",
+    ];
+    let finding = [
+        "code",
+        "column",
+        "end_column",
+        "end_line",
+        "excerpt",
+        "hint",
+        "line",
+        "message",
+    ];
+    let dir = folder("json-keys");
+    for (name, _, path) in VARIANTS {
+        std::fs::write(dir.join(name), fixture(path)).unwrap();
+        let (code, v) = in_dir(&dir, name, &fixture(path), &["-o", "out.png"]);
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(keys(&v), render, "{name}");
+        assert_eq!(keys(&v["engine"]), ["name", "version"]);
+        let (code, out, _) = run_in(&dir, &["check", name, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!((code, keys(&v)), (0, check.to_vec()), "{name}");
+    }
+    for (file, source) in [
+        ("bad.mmd", &b"flowchart TD\n  A -->\n"[..]),
+        ("bad.dot", b"digraph { a -> ; }\n"),
+        ("bad.d2", b"a -> b: {x\n"),
+        ("bad.bpmn", b"<definitions"),
+        ("bad.drawio", b"<mxfile"),
+        ("bad.excalidraw", b"{"),
+    ] {
+        let (code, v) = in_dir(&dir, file, source, &["-o", "out.svg"]);
+        assert_eq!((code, keys(&v)), (1, failure.to_vec()), "{file}: {v}");
+        assert_eq!(keys(&v["error"]), error, "{file}");
+        assert_eq!(v["error"]["code"], "syntax_error", "{file}: {v}");
+        let (code, out, _) = run_in(&dir, &["check", file, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!((code, keys(&v)), (1, check.to_vec()), "{file}: {v}");
+        assert_eq!(keys(&v["errors"][0]), finding, "{file}");
+    }
+    let (code, v) = json(&["x.mmd", "--scale", "99", "--json"]);
+    assert_eq!((code, keys(&v)), (2, vec!["error"]));
+    assert_eq!(keys(&v["error"]), ["code", "hint", "message"]);
+    let (code, v) = json(&["formats", "--json"]);
+    assert_eq!((code, keys(&v)), (0, vec!["formats"]));
+    for f in v["formats"].as_array().unwrap() {
+        let mut expected = vec![
+            "available",
+            "engine",
+            "extensions",
+            "format",
+            "name",
+            "problem",
+        ];
+        if f["format"] == "mermaid" {
+            expected.insert(3, "families");
+        }
+        assert_eq!(keys(f), expected);
+    }
+}

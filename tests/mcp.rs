@@ -387,3 +387,31 @@ fn a_client_that_leaves_ends_the_server_quietly() {
     assert_eq!(code, 2);
     assert!(err.contains("mcp takes no file."), "{err}");
 }
+
+#[test]
+fn every_file_name_checks_and_renders_with_a_preview_in_its_limits() {
+    let dir = folder("mcp-variants");
+    let mut messages = vec![];
+    for (i, (name, _, path)) in VARIANTS.iter().enumerate() {
+        fs::write(dir.join(name), fixture(path)).unwrap();
+        let id = 2 * i as u64 + 2;
+        for (id, tool) in [(id, "check_diagram"), (id + 1, "render_diagram")] {
+            messages.push(json!({
+                "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": {"name": tool, "arguments": {"path": name}},
+            }));
+        }
+    }
+    let responses = session(&dir, &messages);
+    for (i, (name, format, _)) in VARIANTS.iter().enumerate() {
+        let check = &responses[2 * i + 1]["result"];
+        assert_eq!(check["structuredContent"]["format"], *format, "{name}");
+        assert_eq!(check["structuredContent"]["valid"], true, "{name}: {check}");
+        let render = &responses[2 * i + 2]["result"];
+        assert_eq!(text(render)["format"], *format, "{name}");
+        let png = image(render).unwrap_or_else(|| panic!("{name}: no preview"));
+        let pixmap = Pixmap::decode_png(&png).unwrap();
+        assert!(pixmap.width().max(pixmap.height()) <= 1568, "{name}");
+        assert!(png.len() <= 1_000_000, "{name}");
+    }
+}
