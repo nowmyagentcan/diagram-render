@@ -12,7 +12,7 @@ use crate::detect::Format;
 use crate::engine::{Page, Probe};
 use crate::error::{Error, Warning};
 use crate::output::To;
-use crate::run::Stopped;
+use crate::run::{Drawn, Picture, Stopped};
 
 pub const DIM: &str = "2";
 pub const BOLD: &str = "1";
@@ -162,14 +162,6 @@ pub fn error(w: &mut impl Write, look: Look, input: Option<&str>, e: &Error) -> 
     writeln!(w, "  {}", look.paint(DIM, &escape(&e.hint)))
 }
 
-/// `✗ message` and its hint, for what isn't about any file.
-pub fn plain_error(w: &mut impl Write, look: Look, message: &str, hint: &str) -> io::Result<()> {
-    let mark = look.paint(RED, look.pick("✗", "x"));
-    let message = look.paint(BOLD, &escape(message));
-    writeln!(w, "{mark} {message}")?;
-    writeln!(w, "  {}", look.paint(DIM, hint))
-}
-
 /// `! input[:line]: message`.
 pub fn warning(w: &mut impl Write, look: Look, input: &str, warning: &Warning) -> io::Result<()> {
     let mark = look.paint(YELLOW, "!");
@@ -237,6 +229,31 @@ pub struct Made {
     pub took: Duration,
     pub page: Option<Page>,
     pub pages: Vec<Page>,
+}
+
+impl Made {
+    /// The record of `picture`, named `input` and `output`, drawn from `drawn`'s page.
+    pub fn new(
+        input: &str,
+        output: String,
+        to: To,
+        picture: &Picture,
+        drawn: Drawn,
+        took: Duration,
+    ) -> Self {
+        Self {
+            input: input.into(),
+            output,
+            to,
+            width: picture.width,
+            height: picture.height,
+            bytes: picture.bytes.len(),
+            scale: picture.scale,
+            took,
+            page: drawn.page,
+            pages: drawn.pages,
+        }
+    }
 }
 
 /// `✓ flow.mmd → flow.svg  1180×640  18 KB  0.21 s`.

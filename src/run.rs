@@ -122,9 +122,8 @@ pub struct Opened<'a> {
     engine: Option<Engine>,
 }
 
-/// The SVG of a diagram, safe to show, and its pages.
+/// The pages of a drawn diagram: the one drawn and all of them.
 pub struct Drawn {
-    pub svg: String,
     pub page: Option<Page>,
     pub pages: Vec<Page>,
 }
@@ -210,7 +209,7 @@ impl Opened<'_> {
     }
 
     /// The diagram's safe SVG, made with `to` in mind; the warnings go to `known`.
-    pub fn draw(&mut self, to: To) -> Result<Drawn, Error> {
+    pub fn draw(&mut self, to: To) -> Result<(String, Drawn), Error> {
         if self.choices.scale.is_some() && to == To::Svg {
             self.known.warnings.push(Warning::scale_ignored());
         }
@@ -228,11 +227,9 @@ impl Opened<'_> {
         }
         // d2 can't list its boards, so a board has a name but no number.
         let asked = self.choices.page.clone();
-        Ok(Drawn {
-            svg,
-            page: r.page.or(asked.map(|name| Page { index: None, name })),
-            pages: r.pages,
-        })
+        let page = r.page.or(asked.map(|name| Page { index: None, name }));
+        let pages = r.pages;
+        Ok((svg, Drawn { page, pages }))
     }
 
     /// The image of `svg` as `to`: the SVG itself, or a PNG within the size limits.

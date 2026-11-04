@@ -5,6 +5,7 @@ use std::io::{self, BufRead, Write};
 use std::mem;
 use std::path::Path;
 
+use crate::error::Error;
 use crate::output::To;
 use crate::run::Stopped;
 use crate::text::{self, BOLD, DIM, Look};
@@ -76,8 +77,8 @@ pub fn run(
             ["/quit"] => return Ok(()),
             ["/help"] => answer.write_all(HELP.as_bytes())?,
             [word] if is_command(word) => {
-                let message = format!("Unknown command '{word}'.");
-                text::plain_error(&mut complaint, err_look, &message, "Try /help.")?;
+                let e = Error::invalid_option(format!("Unknown command '{word}'."), "Try /help.");
+                text::error(&mut complaint, err_look, None, &e)?;
             }
             [file] => answered(
                 file,
@@ -91,12 +92,13 @@ pub fn run(
                 let to = To::parse(to).unwrap_or(To::Svg);
                 answered(file, to, &mut answer, &mut complaint, looks, &mut render)?;
             }
-            _ => text::plain_error(
-                &mut complaint,
-                err_look,
-                "Give one file, then svg or png.",
-                "For example: flow.mmd png",
-            )?,
+            _ => {
+                let e = Error::invalid_option(
+                    "Give one file, then svg or png.",
+                    "For example: flow.mmd png",
+                );
+                text::error(&mut complaint, err_look, None, &e)?;
+            }
         }
         writeln!(out)?;
     }
@@ -207,7 +209,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::error::{Error, Warning};
+    use crate::error::Warning;
     use crate::run::Known;
     use crate::text::Made;
 

@@ -30,7 +30,6 @@ const SOURCE_LIMIT: usize = 4 << 20;
 /// The largest preview a model gets: its longer side, then its file size.
 const PREVIEW_SIDE: f64 = 1568.0;
 const PREVIEW_BYTES: usize = 1_000_000;
-const PREVIEW_SCALE: f64 = 2.0;
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -123,6 +122,11 @@ impl Server {
 )]
 impl ServerHandler for Server {}
 
+/// The error object of a call that can't start.
+fn usage(e: Error) -> Value {
+    json!({"error": e.json()})
+}
+
 /// The arguments, refusing names the tool doesn't define.
 fn parse<T: DeserializeOwned>(args: JsonObject) -> Result<T, Value> {
     serde_json::from_value(Value::Object(args)).map_err(|e| {
@@ -130,7 +134,7 @@ fn parse<T: DeserializeOwned>(args: JsonObject) -> Result<T, Value> {
             format!("Can't read the arguments: {e}."),
             "Check them against the tool's input schema.",
         );
-        json!({"error": e.json()})
+        usage(e)
     })
 }
 
@@ -194,7 +198,6 @@ fn debug(on: bool, opened: &Opened) {
 /// Renders as the CLI does, without a default output: a file only when `output` is given.
 fn render(args: RenderArgs, debugging: bool) -> Result<CallToolResult, Value> {
     let start = Instant::now();
-    let usage = |e: Error| json!({"error": e.json()});
     let options = Options {
         format: args.format,
         to: args.to,
@@ -251,16 +254,16 @@ fn draw(
     start: Instant,
     preview: bool,
 ) -> Result<(Made, Option<Vec<u8>>), Error> {
-    let drawn = opened.draw(to)?;
-    let svg = preview.then(|| drawn.svg.clone());
-    let picture = opened.picture(drawn.svg, to)?;
+    let (svg, drawn) = opened.draw(to)?;
+    let kept = preview.then(|| svg.clone());
+    let picture = opened.picture(svg, to)?;
     if let Some((target, _)) = &target {
         output::write(target, &picture.bytes)?;
     }
     let small = |p: &run::Picture| {
         p.width.max(p.height) as f64 <= PREVIEW_SIDE && p.bytes.len() <= PREVIEW_BYTES
     };
-    let image = match svg {
+    let image = match kept {
         None => None,
         Some(_) if to == To::Png && small(&picture) => Some(picture.bytes.clone()),
         Some(svg) => match shrunk(opened, &svg, to) {
@@ -272,21 +275,11 @@ fn draw(
             }
         },
     };
-    let made = Made {
-        input: name.into(),
-        output: match target {
-            Some((Target::File(path), _)) => path.to_string_lossy().into_owned(),
-            _ => String::new(),
-        },
-        to,
-        width: picture.width,
-        height: picture.height,
-        bytes: picture.bytes.len(),
-        scale: picture.scale,
-        took: start.elapsed(),
-        page: drawn.page,
-        pages: drawn.pages,
+    let output = match target {
+        Some((Target::File(path), _)) => path.to_string_lossy().into_owned(),
+        _ => String::new(),
     };
+    let made = Made::new(name, output, to, &picture, drawn, start.elapsed());
     Ok((made, image))
 }
 
@@ -294,7 +287,7 @@ fn draw(
 /// 0.75 until it also fits its size in bytes.
 fn shrunk(opened: &mut Opened, svg: &str, to: To) -> Result<Vec<u8>, Error> {
     let (width, height) = opened.css_size(svg);
-    let mut scale = PREVIEW_SCALE.min(PREVIEW_SIDE / width.max(height));
+    let mut scale = (PREVIEW_SIDE / width.max(height)).min(2.0);
     for _ in 0..16 {
         // These are about the output; the preview's own go unreported.
         let png = opened.png(svg, to, scale, &mut vec![])?;
@@ -309,7 +302,6 @@ fn shrunk(opened: &mut Opened, svg: &str, to: To) -> Result<Vec<u8>, Error> {
 /// Checks as the CLI does. A diagram that can't be read as its format is a result, with its
 /// errors; a run that couldn't look at it is an error.
 fn check(args: CheckArgs, debugging: bool) -> Result<CallToolResult, Value> {
-    let usage = |e: Error| json!({"error": e.json()});
     let options = Options {
         format: args.format,
         page: args.page,

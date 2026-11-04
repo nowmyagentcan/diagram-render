@@ -190,7 +190,7 @@ pub fn large_mermaid() -> String {
         for i in group * 30..(group + 1) * 30 {
             text += &format!("    n{i}[Node {i}]\n");
         }
-        text += &format!("  end\n");
+        text += "  end\n";
     }
     for i in 0..299 {
         text += &format!("  n{i} --> n{}\n", i + 1);

@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::error::Error;
 use crate::input;
 use crate::output::{self, Target, To};
-use crate::run::{self, Options, Picture, Source};
+use crate::run::{self, Options, Source};
 use crate::text::Made;
 
 const PAGE: &str = include_str!("ui.html");
@@ -302,39 +302,21 @@ fn render(name: Option<&str>, options: Option<&str>, data: Vec<u8>, debug: bool)
         Ok(opened) => opened,
         Err(stopped) => return json(422, stopped.json(input)),
     };
-    let drawn = opened.draw(to);
-    let picture = drawn.and_then(|drawn| {
+    let drawn = opened.draw(to).and_then(|(svg, drawn)| {
         let page = choices.page.as_ref().and(drawn.page.as_ref());
         let output = download_name(&file, to, page.map(|p| p.name.as_str()))?;
-        let picture = opened.picture(drawn.svg, to)?;
-        Ok((picture, output, drawn.page, drawn.pages))
+        let picture = opened.picture(svg, to)?;
+        Ok((picture, output, drawn))
     });
     if debug {
         crate::debug(opened.log());
     }
     let known = std::mem::take(&mut opened.known);
-    let (picture, output, page, pages) = match picture {
+    let (picture, output, drawn) = match drawn {
         Ok(done) => done,
         Err(e) => return json(422, run::Stopped::new(e, known).json(input)),
     };
-    let Picture {
-        bytes,
-        width,
-        height,
-        scale,
-    } = picture;
-    let made = Made {
-        input: input.into(),
-        output,
-        to,
-        width,
-        height,
-        bytes: bytes.len(),
-        scale,
-        took: start.elapsed(),
-        page,
-        pages,
-    };
+    let made = Made::new(input, output, to, &picture, drawn, start.elapsed());
     let result = run::render_json(&known, &made).to_string();
     Response {
         status: 200,
@@ -342,7 +324,7 @@ fn render(name: Option<&str>, options: Option<&str>, data: Vec<u8>, debug: bool)
             To::Svg => "image/svg+xml",
             To::Png => "image/png",
         },
-        body: bytes,
+        body: picture.bytes,
         result: Some(utf8_percent_encode(&result, ENCODED).to_string()),
     }
 }

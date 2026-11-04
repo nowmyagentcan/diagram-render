@@ -587,7 +587,7 @@ fn draw(
     to: To,
     start: Instant,
 ) -> Result<(Made, bool), Error> {
-    let drawn = opened.draw(to)?;
+    let (svg, drawn) = opened.draw(to)?;
     // Beside the input, the output is named after the page found, not as --page wrote it.
     let target = match (&drawn.page, &args.choices.page, &args.output, arg != "-") {
         (Some(page), Some(_), None, true) => {
@@ -595,23 +595,14 @@ fn draw(
         }
         _ => target,
     };
-    let picture = opened.picture(drawn.svg, to)?;
+    let picture = opened.picture(svg, to)?;
     output::write(&target, &picture.bytes)?;
-    let made = Made {
-        input: arg.to_string_lossy().into_owned(),
-        output: match &target {
-            Target::Stdout => "-".to_string(),
-            Target::File(p) => p.to_string_lossy().into_owned(),
-        },
-        to,
-        width: picture.width,
-        height: picture.height,
-        bytes: picture.bytes.len(),
-        scale: picture.scale,
-        took: start.elapsed(),
-        page: drawn.page,
-        pages: drawn.pages,
+    let output = match &target {
+        Target::Stdout => "-".to_string(),
+        Target::File(p) => p.to_string_lossy().into_owned(),
     };
+    let input = arg.to_string_lossy();
+    let made = Made::new(&input, output, to, &picture, drawn, start.elapsed());
     Ok((made, target == Target::Stdout))
 }
 
