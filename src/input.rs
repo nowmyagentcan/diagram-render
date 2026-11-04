@@ -18,6 +18,11 @@ pub fn read(arg: &OsStr) -> Result<Vec<u8>, Error> {
             .map_err(|e| Error::read_failed("stdin", &e))?
             .ok_or_else(|| Error::too_large("stdin", "over 64 MiB"));
     }
+    read_file(arg)
+}
+
+/// The bytes of the file at `arg`, whatever its name.
+pub fn read_file(arg: &OsStr) -> Result<Vec<u8>, Error> {
     let name = arg.to_string_lossy();
     let path = Path::new(arg);
     let failed = |e: io::Error| match e.kind() {

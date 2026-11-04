@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::detect::{self, Format};
@@ -25,6 +26,40 @@ pub struct Choices {
     pub page: Option<String>,
     pub timeout: Option<u64>,
     pub allow_network: bool,
+}
+
+/// The same options as plain values, as the page and the MCP tools send them.
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Options {
+    pub format: Option<String>,
+    pub to: Option<String>,
+    pub scale: Option<f64>,
+    pub background: Option<String>,
+    pub page: Option<String>,
+    #[serde(default)]
+    pub allow_network: bool,
+    pub timeout: Option<u64>,
+}
+
+impl Options {
+    /// Checks every value as the command line does.
+    pub fn choices(self) -> Result<(Choices, Option<To>), Error> {
+        let to = self.to.as_deref().map(crate::to).transpose()?;
+        let format = self.format.as_deref().map(crate::format).transpose()?;
+        let background = self.background.as_deref().map(crate::background);
+        let scale = self.scale.map(|s| crate::scale(&s.to_string()));
+        let timeout = self.timeout.map(|t| crate::timeout(&t.to_string()));
+        let choices = Choices {
+            format: format.flatten(),
+            scale: scale.transpose()?,
+            background: background.transpose()?.flatten(),
+            page: self.page.map(crate::page).transpose()?,
+            timeout: timeout.transpose()?,
+            allow_network: self.allow_network,
+        };
+        Ok((choices, to))
+    }
 }
 
 /// Where a diagram came from.

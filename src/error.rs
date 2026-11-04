@@ -70,6 +70,15 @@ impl Warning {
         }
     }
 
+    /// An MCP render whose PNG preview failed, though its output didn't.
+    pub fn no_preview(reason: &str) -> Self {
+        Self {
+            code: "no_preview",
+            message: format!("No preview image: {reason}"),
+            line: None,
+        }
+    }
+
     pub fn extra_graphs_ignored(n: usize) -> Self {
         Self {
             code: "extra_graphs_ignored",

@@ -9,6 +9,7 @@ mod engine;
 mod error;
 mod excalidraw;
 mod input;
+mod mcp;
 mod mermaid;
 mod output;
 mod raster;
@@ -100,11 +101,22 @@ Options:
   -h, --help             print help
 ";
 
+const MCP_HELP: &str =
+    "Run the MCP server on stdio, with the tools render_diagram and check_diagram.
+
+Usage: diagram-render mcp [OPTIONS]
+
+Options:
+      --debug            show engine command lines and full output
+  -h, --help             print help
+";
+
 #[derive(Clone, Copy, PartialEq)]
 enum Command {
     Render,
     Check,
     Formats,
+    Mcp,
 }
 
 impl Command {
@@ -113,6 +125,7 @@ impl Command {
             Self::Render => "render",
             Self::Check => "check",
             Self::Formats => "formats",
+            Self::Mcp => "mcp",
         }
     }
 
@@ -121,6 +134,7 @@ impl Command {
             Self::Render => HELP,
             Self::Check => CHECK_HELP,
             Self::Formats => FORMATS_HELP,
+            Self::Mcp => MCP_HELP,
         }
     }
 
@@ -132,6 +146,7 @@ impl Command {
             Self::Render => true,
             Self::Check => common.contains(&option) || check.contains(&option),
             Self::Formats => common.contains(&option),
+            Self::Mcp => ["--debug", "--help"].contains(&option),
         }
     }
 }
@@ -163,15 +178,25 @@ fn main() -> ExitCode {
         Some("render") => (Command::Render, &args[1..]),
         Some("check") => (Command::Check, &args[1..]),
         Some("formats") => (Command::Formats, &args[1..]),
+        Some("mcp") => (Command::Mcp, &args[1..]),
         _ => (Command::Render, &args[..]),
     };
     let code = match parse(command, rest) {
         Ok(Parsed::Print(text)) => finish(io::stdout().write_all(text.as_bytes()), 0),
         Ok(Parsed::Run(args)) if command == Command::Formats => formats(&args),
+        Ok(Parsed::Run(args)) if command == Command::Mcp => served(mcp::serve(args.debug)),
         Ok(Parsed::Run(args)) => run(command, args),
         Err(e) => usage(&e, json),
     };
     ExitCode::from(code)
+}
+
+/// The exit code of a server that ended; what stopped it, on stderr.
+fn served(result: Result<(), Error>) -> u8 {
+    match result {
+        Ok(()) => 0,
+        Err(e) => usage(&e, false),
+    }
 }
 
 /// The run's exit code once its output is written: a reader that hung up ends it quietly with
@@ -231,10 +256,11 @@ fn parse(command: Command, args: &[OsString]) -> Result<Parsed, Error> {
             ("--background", _) => args.choices.background = background(&string(&mut p, name)?)?,
             ("--page", _) => args.choices.page = Some(page(string(&mut p, name)?)?),
             ("--timeout", _) => args.choices.timeout = Some(timeout(&string(&mut p, name)?)?),
-            (_, Value(_)) if command == Command::Formats => {
+            (_, Value(_)) if ![Command::Render, Command::Check].contains(&command) => {
+                let word = command.word();
                 return Err(Error::invalid_option(
-                    "formats takes no file.",
-                    "Run diagram-render formats on its own.",
+                    format!("{word} takes no file."),
+                    format!("Run diagram-render {word} on its own."),
                 ));
             }
             (_, Value(input)) if args.input.is_none() => args.input = Some(input),

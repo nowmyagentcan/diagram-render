@@ -46,10 +46,10 @@ pub fn target(
     to: Option<To>,
     page: Option<&str>,
 ) -> Result<(Target, To), Error> {
-    let file = match output {
-        Some(o) if o == "-" => return Ok((Target::Stdout, to.unwrap_or(To::Svg))),
-        Some(o) => PathBuf::from(o),
-        None if input == "-" => return Ok((Target::Stdout, to.unwrap_or(To::Svg))),
+    match output {
+        Some(o) if o == "-" => Ok((Target::Stdout, to.unwrap_or(To::Svg))),
+        Some(o) => named(o.into(), to),
+        None if input == "-" => Ok((Target::Stdout, to.unwrap_or(To::Svg))),
         None => {
             let to = to.unwrap_or(To::Svg);
             let input = Path::new(input);
@@ -63,9 +63,13 @@ pub fn target(
                 name.push(format!("-{}", page.chars().map(safe).collect::<String>()));
             }
             name.push(format!(".{}", to.ext()));
-            return Ok((Target::File(input.with_file_name(name)), to));
+            Ok((Target::File(input.with_file_name(name)), to))
         }
-    };
+    }
+}
+
+/// The output `file`, whose extension says its format and must agree with `to`.
+pub fn named(file: PathBuf, to: Option<To>) -> Result<(Target, To), Error> {
     let ext = file
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase());
