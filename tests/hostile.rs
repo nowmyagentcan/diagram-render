@@ -533,11 +533,11 @@ fn block_nest(depth: usize) -> String {
 fn a_small_mermaid_file_cant_take_all_the_memory() {
     let dir = folder("hostile-merman");
     fs::write(dir.join("x.mmd"), block_nest(3000)).unwrap();
-    let args = ["x.mmd", "-o", "x.svg", "--json", "--timeout", "3"];
-    // merman's own budget refuses this in 50 ms; left running it takes 350 MB a second, so the
-    // short --timeout keeps this test from taking the memory it is about.
-    let answer = bounded(&dir, &args, Duration::from_secs(10));
-    assert!(answer.is_some_and(|(code, _)| code == 1));
+    let args = ["x.mmd", "-o", "x.svg", "--json", "--timeout", "30"];
+    // merman's budget refuses this in under a second alone, and in over 3 s beside other tests.
+    let answer = bounded(&dir, &args, Duration::from_secs(40));
+    let (code, out) = answer.expect("an end within the limit");
+    assert_eq!(code, 1, "{out}");
 }
 
 #[test]

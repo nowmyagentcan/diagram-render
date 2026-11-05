@@ -3,7 +3,7 @@
 mod common;
 
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -38,15 +38,17 @@ fn session(dir: &Path, messages: &[Value]) -> Vec<Value> {
     for m in messages {
         writeln!(stdin, "{m}").unwrap();
     }
+    // A client stays until it has its answers: rmcp drops what is unsent at the end of stdin.
+    let asked = 1 + messages.iter().filter(|m| m.get("id").is_some()).count();
+    let lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut responses: Vec<Value> = lines
+        .take(asked)
+        .map(|l| serde_json::from_str(&l.unwrap()).unwrap())
+        .collect();
     drop(stdin);
     let out = child.wait_with_output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stderr), "");
     assert_eq!(out.status.code(), Some(0));
-    let mut responses: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
     responses.sort_by_key(|r| r["id"].as_u64());
     responses
 }
@@ -409,7 +411,7 @@ fn every_file_name_checks_and_renders_with_a_preview_in_its_limits() {
         assert_eq!(check["structuredContent"]["valid"], true, "{name}: {check}");
         let render = &responses[2 * i + 2]["result"];
         assert_eq!(text(render)["format"], *format, "{name}");
-        let png = image(render).unwrap_or_else(|| panic!("{name}: no preview"));
+        let png = image(render).unwrap_or_else(|| panic!("{name}: no preview: {render}"));
         let pixmap = Pixmap::decode_png(&png).unwrap();
         assert!(pixmap.width().max(pixmap.height()) <= 1568, "{name}");
         assert!(png.len() <= 1_000_000, "{name}");
