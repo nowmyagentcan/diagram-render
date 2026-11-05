@@ -801,7 +801,6 @@ fn answering(head: &'static str) -> String {
 }
 
 #[test]
-#[ignore = "known bug: T1-05"]
 fn a_broken_image_url_says_so_in_svg_and_png_alike() {
     let url = answering("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     let dir = folder("hostile-404");

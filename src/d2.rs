@@ -98,9 +98,9 @@ fn run(
     if png.is_some() {
         args.extend(["--stdout-format", "png"]);
     }
-    // Local images are embedded either way; remote ones stay links. The SVG a PNG is sized
-    // from never needs them.
-    if !task.allow_network || png.is_none() && task.to == To::Png {
+    // Local images are embedded either way; remote ones stay links. With the network, the SVG
+    // a PNG is sized from fetches them too: d2's own PNG hides an image it can't get.
+    if !task.allow_network {
         args.push("--bundle=false");
     }
     args.extend(["-", "-"]);
