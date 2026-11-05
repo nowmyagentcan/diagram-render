@@ -114,7 +114,6 @@ fn busy_d2() -> String {
 }
 
 #[test]
-#[ignore = "known bug: R1-001"]
 fn a_hard_link_at_the_temporary_name_keeps_the_file_it_points_to() {
     let dir = folder("hostile-link");
     let input = dir.join("flow.d2");
@@ -133,7 +132,6 @@ fn a_hard_link_at_the_temporary_name_keeps_the_file_it_points_to() {
 }
 
 #[test]
-#[ignore = "known bug: R1-001"]
 fn a_file_at_the_temporary_name_is_left_alone() {
     let dir = folder("hostile-temp");
     fs::write(dir.join("flow.d2"), busy_d2()).unwrap();
@@ -151,7 +149,6 @@ fn a_file_at_the_temporary_name_is_left_alone() {
 
 #[cfg(unix)]
 #[test]
-#[ignore = "known bug: R1-001"]
 fn links_planted_for_every_likely_pid_dont_redirect_the_output() {
     let dir = folder("hostile-symlink");
     fs::write(dir.join("flow.mmd"), "flowchart TD\n  A --> B\n").unwrap();

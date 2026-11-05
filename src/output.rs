@@ -2,7 +2,8 @@
 //! with the diagram's extension replaced.
 
 use std::ffi::{OsStr, OsString};
-use std::fs;
+use std::fs::{self, File};
+use std::hash::{BuildHasher, RandomState};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -83,6 +84,21 @@ pub fn named(file: PathBuf, to: Option<To>) -> Result<(Target, To), Error> {
     }
 }
 
+/// A new file beside `path`, under a name no one can plant a link at: nothing already there is
+/// followed or overwritten.
+fn temporary(path: &Path) -> io::Result<(PathBuf, File)> {
+    loop {
+        let mut name = OsString::from(".");
+        name.push(path.file_name().unwrap_or_default());
+        name.push(format!(".{:016x}.tmp", RandomState::new().hash_one(0)));
+        let temp = path.with_file_name(name);
+        match File::create_new(&temp) {
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            created => return created.map(|file| (temp, file)),
+        }
+    }
+}
+
 /// Writes `bytes` to `target`. A file is written beside itself under a temporary name, then
 /// renamed over the old one, so a failed or stopped run leaves the old file whole. A reader
 /// of stdout that hung up isn't an error.
@@ -99,14 +115,15 @@ pub fn write(target: &Target, bytes: &[u8]) -> Result<(), Error> {
         }
         Target::File(path) => path,
     };
-    let mut temp = OsString::from(".");
-    temp.push(path.file_name().unwrap_or_default());
-    temp.push(format!(".{}.tmp", std::process::id()));
-    let temp = path.with_file_name(temp);
-    let written = fs::write(&temp, bytes).and_then(|()| fs::rename(&temp, path));
+    let failed = |e| Error::write_failed(&path.display().to_string(), &e);
+    let (temp, mut file) = temporary(path).map_err(failed)?;
+    let written = file.write_all(bytes).and_then(|()| {
+        drop(file);
+        fs::rename(&temp, path)
+    });
     written.map_err(|e| {
         let _ = fs::remove_file(&temp);
-        Error::write_failed(&path.display().to_string(), &e)
+        failed(e)
     })
 }
 
