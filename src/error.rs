@@ -649,6 +649,16 @@ impl Error {
         )
     }
 
+    /// `path` as the source wrote it, cut to 80 characters.
+    pub fn network_path(path: &str) -> Self {
+        let cut: String = path.chars().take(80).collect();
+        Self::new(
+            "network_path",
+            format!("The diagram names the network path {cut}, which isn't opened."),
+            "Copy the file beside the diagram and use a relative path.",
+        )
+    }
+
     pub fn image_too_large(width: u32, height: u32) -> Self {
         Self::new(
             "image_too_large",

@@ -8,6 +8,7 @@ use resvg::tiny_skia::Pixmap;
 
 use crate::engine::{Checked, Engine, Job, Rendered, Task};
 use crate::error::{Error, Warning};
+use crate::netpath;
 use crate::output::To;
 use crate::raster::Png;
 
@@ -83,6 +84,9 @@ fn run(
     more: Option<&str>,
     png: Option<f64>,
 ) -> Result<Result<Rendered, Vec<Error>>, Error> {
+    if let Some(found) = netpath::d2(task.lines.text(), task.job.dir) {
+        return Ok(Err(vec![task.lines.refuse(&found)]));
+    }
     let target = format!("--target={}", task.page.unwrap_or(""));
     // d2's own limit sits past ours, so ours stops it and says why.
     let timeout = (task.job.limit.as_secs() + 5).to_string();

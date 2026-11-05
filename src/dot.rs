@@ -2,12 +2,16 @@
 
 use crate::engine::{Checked, Engine, Ran, Rendered, Task};
 use crate::error::{Error, Warning};
+use crate::netpath;
 
 /// What this build's sfdp prints, with exit code 1, after writing a good SVG: it has no
 /// triangulation library to remove node overlaps with.
 const SFDP: &str = "Error: remove_overlap: Graphviz not built with triangulation library";
 
 pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
+    if let Some(e) = network_path(task) {
+        return Err(e);
+    }
     let background = task.background.map(|b| format!("-Gbgcolor={b}"));
     let args: Vec<&str> = ["-Tsvg"].into_iter().chain(background.as_deref()).collect();
     let ran = engine.go(&args, task)?;
@@ -31,8 +35,20 @@ pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
 }
 
 pub fn check(engine: &mut Engine, task: &Task) -> Result<Checked, Error> {
+    if let Some(e) = network_path(task) {
+        return Ok(Checked {
+            errors: vec![e],
+            ..Checked::default()
+        });
+    }
     let ran = engine.go(&["-Tcanon"], task)?;
     read(engine, task, &ran)
+}
+
+/// A network path the source names, which `dot` would open.
+fn network_path(task: &Task) -> Option<Error> {
+    let found = netpath::dot(task.lines.text())?;
+    Some(task.lines.refuse(&found))
 }
 
 /// Graphviz's messages: errors (a syntax error placed at the token it names) and warnings.

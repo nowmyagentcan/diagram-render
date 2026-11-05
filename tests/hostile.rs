@@ -743,7 +743,6 @@ fn nothing_named_in_a_diagram_is_fetched_without_the_option() {
 
 #[cfg(windows)]
 #[test]
-#[ignore = "known bug: T1-01"]
 fn a_network_path_in_a_diagram_is_not_opened_without_the_option() {
     // The WebDAV redirector takes `//host@port/`; it answers a local port, so the test stays here.
     let sources = [
@@ -751,6 +750,27 @@ fn a_network_path_in_a_diagram_is_not_opened_without_the_option() {
             "a.dot",
             "digraph {{a [image=\"//127.0.0.1@{port}/s/x.png\"]}}",
         ),
+        (
+            "e.dot",
+            "digraph {{a [image=\"/\" + \"/127.0.0.1@{port}/s/x.png\"]}}",
+        ),
+        (
+            "f.dot",
+            "digraph {{a [image=\"\\??\\UNC\\127.0.0.1@{port}\\s\\x.png\"]}}",
+        ),
+        (
+            "g.dot",
+            "digraph {{graph [imagepath=\"/\"]; a [image=\"127.0.0.1@{port}/s/x.png\"]}}",
+        ),
+        (
+            "h.dot",
+            "digraph {{a [label=<<TABLE><TR><TD><IMG SRC=\"&#47;&#47;127.0.0.1@{port}/s/x.png\"/></TD></TR></TABLE>>]}}",
+        ),
+        (
+            "i.d2",
+            "vars: {{p: /}}\na: {{shape: image; icon: ${{p}}/127.0.0.1@{port}/s/x.png}}",
+        ),
+        ("j.d2", "...@imported"),
         (
             "b.dot",
             "digraph {{a [shapefile=\"//127.0.0.1@{port}/s/x.png\"]}}",
@@ -773,9 +793,33 @@ fn a_network_path_in_a_diagram_is_not_opened_without_the_option() {
             .replace("{{", "{")
             .replace("}}", "}");
         fs::write(dir.join(file), source).unwrap();
-        let _ = run_in(&dir, &[file, "-o", "x.svg", "--json"], b"");
+        let import = format!("a: {{shape: image; icon: //127.0.0.1@{port}/s/x.png}}");
+        fs::write(dir.join("imported.d2"), import).unwrap();
+        let (code, out, _) = run_in(&dir, &[file, "-o", "x.svg", "--json"], b"");
+        assert_eq!(code, 1, "{file}: {out}");
+        assert!(out.contains("network_path"), "{file}: {out}");
         thread::sleep(Duration::from_millis(400));
         assert_eq!(seen.try_iter().count(), 0, "{file} reached the network");
+    }
+}
+
+#[test]
+fn a_network_path_is_refused_at_its_place_in_render_and_check() {
+    let dir = folder("hostile-path-place");
+    for (file, source) in [
+        ("x.dot", "digraph {\n  a [image=\"//host/s/x.png\"]\n}\n"),
+        ("x.d2", "a\nb.icon: //host/s/x.png\n"),
+    ] {
+        fs::write(dir.join(file), source).unwrap();
+        let (code, out, _) = run_in(&dir, &[file, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(code, 1, "{out}");
+        assert_eq!(v["error"]["code"], "network_path", "{out}");
+        assert_eq!(v["error"]["line"], 2, "{out}");
+        let (code, out, _) = run_in(&dir, &["check", file, "--json"], b"");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(code, 1, "{out}");
+        assert_eq!(v["errors"][0]["code"], "network_path", "{out}");
     }
 }
 

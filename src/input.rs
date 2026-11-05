@@ -7,6 +7,7 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use crate::error::{Error, Excerpt};
+use crate::netpath::Found;
 
 /// The most any input may hold.
 pub const LIMIT: u64 = 64 << 20;
@@ -123,6 +124,15 @@ pub struct Lines<'a> {
 }
 
 impl<'a> Lines<'a> {
+    /// `network_path` for what a scan of this text found, at its place when it is in this text.
+    pub fn refuse(&self, found: &Found) -> Error {
+        let e = Error::network_path(&found.path);
+        match found.at.map(|at| self.locate(at)) {
+            Some((line, column)) => self.place(e, line, Some(column)),
+            None => e,
+        }
+    }
+
     pub fn new(text: &'a str) -> Self {
         let b = text.as_bytes();
         let mut starts = vec![0];

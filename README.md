@@ -81,6 +81,7 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 | Excalidraw | `.excalidraw` `.excalidraw.json` `.excalidraw.svg` `.excalidraw.png` | this tool |
 
 - Input: one diagram per run, up to 64 MiB, and 4 MiB for Mermaid, DOT and D2 text.
+- A render stops at its `--timeout` (60 s unless you set it) and at 4 GiB of memory, and ends with the run that started it.
 - Output: SVG or PNG. PNGs stop at 16384 px a side and 64 MP; a larger diagram comes out at a lower scale, with a warning.
 - Every SVG loses its scripts, event handlers and `javascript:` links.
 - draw.io vendor shape libraries (such as `mxgraph.aws4.*`) and stencils are drawn as dashed boxes with their labels, and the run warns about them.
@@ -89,6 +90,7 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - Graphviz `image=` files stay links in the SVG and are left out of PNGs.
 - Not read: PlantUML, Visio, or Markdown files with diagrams inside. Not written: PDF, JPEG or animated SVG.
 - It makes no network requests. The one exception is D2 with `--allow-network`, which fetches the image URLs written in your diagram. Without it, D2 SVGs keep those images as links, and D2 PNGs that need them stop with an error saying so.
+- A network path such as `//host/x.png` or `\\host\x.png` in a DOT or D2 diagram is refused with `network_path`, with or without `--allow-network`, because Windows would contact that host. So is a D2 icon that starts with a variable, unless the variable is an http(s) URL.
 
 ## How it works
 

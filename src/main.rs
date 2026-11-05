@@ -13,6 +13,7 @@ mod interactive;
 mod leash;
 mod mcp;
 mod mermaid;
+mod netpath;
 mod output;
 mod raster;
 mod run;
