@@ -176,10 +176,7 @@ pub fn dot(text: &str) -> Option<Found> {
             path: path.clone(),
         })
     });
-    [html, attribute]
-        .into_iter()
-        .flatten()
-        .min_by_key(|found| found.at)
+    html.or(attribute)
 }
 
 /// `key: value` in D2 text, as a scan sees it.

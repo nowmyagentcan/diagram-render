@@ -17,7 +17,7 @@ use crate::error::{Code, Error, Warning, kept_option};
 use crate::input::Lines;
 use crate::leash::{self, Leash};
 use crate::output::To;
-use crate::raster::{self, Png};
+use crate::raster::Png;
 use crate::{d2, dot, mermaid, worker};
 
 /// How long a version check may take. A first start after install can take seconds while the
@@ -136,13 +136,18 @@ impl Engine {
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            const DETACHED_PROCESS: u32 = 0x0000_0008;
             // merman finds the computer's fonts through WINDIR.
             for key in ["SystemRoot", "TEMP", "TMP", "WINDIR"] {
                 if let Some(value) = env::var_os(key) {
                     cmd.env(key, value);
                 }
             }
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            // A hidden console costs a worker more time than its drawing does.
+            cmd.creation_flags(match self.own {
+                true => DETACHED_PROCESS,
+                false => CREATE_NO_WINDOW,
+            });
         }
         let shown = format!("{} {}", self.exe.display(), args.join(" "));
         self.log.push(shown.trim_end().into());
@@ -322,10 +327,10 @@ pub fn png(
         (Format::Mermaid, Some(engine)) => mermaid::png(engine, task, scale, warnings),
         (Format::D2, Some(engine)) => d2::png(engine, task, svg, scale),
         // Graphviz measures a family it has no widths for as Times.
-        (Format::Dot, Some(engine)) => {
-            worker::png(engine, task, svg, scale, raster::SERIF, warnings)
+        (_, Some(engine)) => {
+            let serif = format == Format::Dot;
+            worker::png(engine, task, svg, scale, serif, warnings)
         }
-        (_, Some(engine)) => worker::png(engine, task, svg, scale, raster::SANS, warnings),
         _ => Err(Error::internal("no engine was found")),
     }
 }

@@ -29,8 +29,8 @@ pub const FLAG: &str = "--worker";
 enum Ask {
     Render(Format),
     Check(Format),
-    /// Paints the SVG on stdin at a scale, with the font that stands in for missing ones.
-    Png(f64, String),
+    /// Paints the SVG on stdin at a scale; a missing font is drawn serif when asked, else sans.
+    Png(f64, bool),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -101,11 +101,11 @@ pub fn png(
     task: &Task,
     svg: &str,
     scale: f64,
-    substitute: &str,
+    serif: bool,
     warnings: &mut Vec<Warning>,
 ) -> Result<Png, Error> {
     let mut ours = Engine::ours();
-    let request = Request::new(Ask::Png(scale, substitute.into()), task);
+    let request = Request::new(Ask::Png(scale, serif), task);
     let sent = request.send(&mut ours, svg.as_bytes(), task);
     engine.log.append(&mut ours.log);
     let ((png, said), bytes): ((Png, Vec<Warning>), _) = sent?;
@@ -158,11 +158,8 @@ pub fn serve(request: &str) -> ExitCode {
             };
             answer(checked.map(|c| (c, vec![])))
         }
-        Ask::Png(scale, substitute) => {
-            let substitute = match substitute.as_str() {
-                raster::SERIF => raster::SERIF,
-                _ => raster::SANS,
-            };
+        Ask::Png(scale, serif) => {
+            let substitute = if *serif { raster::SERIF } else { raster::SANS };
             let mut warnings = vec![];
             let painted = raster::png(&text, *scale, substitute, &mut warnings);
             answer(painted.map(|mut p| {
@@ -184,7 +181,6 @@ fn answer<T: Serialize>(done: Result<(T, Vec<u8>), Error>) -> io::Result<()> {
         Ok((said, bytes)) => (Ok(said), bytes),
         Err(e) => (Err(e), vec![]),
     };
-    let said: Result<T, Error> = said;
     let mut out = io::stdout().lock();
     serde_json::to_writer(&mut out, &said)?;
     out.write_all(b"\n")?;
