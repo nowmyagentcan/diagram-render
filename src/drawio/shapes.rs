@@ -213,8 +213,8 @@ pub fn polygon(st: &Style, r: Rect) -> Option<Vec<P>> {
     let (w, h) = (local.w, local.h);
     let size = |rel: f64, fixed: f64, max: f64| match st.get("fixedSize").is_some_and(|v| v != "0")
     {
-        true => st.num("size", fixed).clamp(0.0, max),
-        false => w * st.num("size", rel).clamp(0.0, max / w.max(1e-9)),
+        true => st.num("size", fixed).max(0.0).min(max),
+        false => w * st.num("size", rel).max(0.0).min(max / w.max(1e-9)),
     };
     let pts: Vec<P> = match shape {
         "rhombus" => vec![(w / 2.0, 0.0), (w, h / 2.0), (w / 2.0, h), (0.0, h / 2.0)],
@@ -250,11 +250,11 @@ pub fn polygon(st: &Style, r: Rect) -> Option<Vec<P>> {
             ]
         }
         "card" => {
-            let s = st.num("size", 30.0).clamp(0.0, w.min(h));
+            let s = st.num("size", 30.0).max(0.0).min(w.min(h));
             vec![(s, 0.0), (w, 0.0), (w, h), (0.0, h), (0.0, s)]
         }
         "note" => {
-            let s = st.num("size", 30.0).clamp(0.0, w.min(h));
+            let s = st.num("size", 30.0).max(0.0).min(w.min(h));
             vec![(0.0, 0.0), (w - s, 0.0), (w, s), (w, h), (0.0, h)]
         }
         _ => return None,
@@ -406,7 +406,7 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
             let mut p = Path::default();
             if shape == "process" {
                 let mut inset = match st.get("fixedSize").is_some_and(|v| v != "0") {
-                    true => st.num("size", 0.1).clamp(0.0, w),
+                    true => st.num("size", 0.1).max(0.0).min(w),
                     false => w * st.num("size", 0.1).clamp(0.0, 1.0),
                 };
                 if rounded {
@@ -424,8 +424,8 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
                     let f = st.num("arcSize", ROUNDING) / 100.0;
                     inset = (w * f).min(h * f);
                 }
-                let dx = st.num("dx", 20.0).clamp(0.0, w).max(inset);
-                let dy = st.num("dy", 20.0).clamp(0.0, h).max(inset);
+                let dx = st.num("dx", 20.0).max(0.0).min(w).max(inset);
+                let dy = st.num("dy", 20.0).max(0.0).min(h).max(inset);
                 p.m((x, y + dy));
                 p.l((x + w, y + dy));
                 p.m((x + dx, y));
@@ -504,7 +504,7 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
             let d = p.0;
             path(&mut body, &d, &paint_attrs);
             if shape == "note" {
-                let s = st.num("size", 30.0).clamp(0.0, w.min(h));
+                let s = st.num("size", 30.0).max(0.0).min(w.min(h));
                 let mut p = Path::default();
                 p.m((x + w - s, y));
                 p.l((x + w - s, y + s));
@@ -534,7 +534,7 @@ pub fn draw(out: &mut String, s: &State, cx: &mut Context) -> Option<Note> {
             path(&mut body, &lid.0, &line_only);
         }
         "cylinder3" => {
-            let s = st.num("size", 15.0).clamp(0.0, h * 0.5);
+            let s = st.num("size", 15.0).max(0.0).min(h * 0.5);
             let lid = st.not_off("lid");
             let mut p = Path::default();
             let radii = (w * 0.5, s);
@@ -766,7 +766,8 @@ fn swimlane(body: &mut String, st: &Style, r: Rect, paint_attrs: &str, line_only
     let side = if horizontal { r.h } else { r.w };
     let start = st
         .num("startSize", if table { 0.0 } else { 40.0 })
-        .clamp(0.0, side);
+        .max(0.0)
+        .min(side);
     let (x, y, w, h) = (r.x, r.y, r.w, r.h);
     let lane = paint(st.get("swimlaneFillColor"), "#ffffff");
     let lane_attrs = line_only.replacen(r#"fill="none""#, &format!(r#"fill="{lane}""#), 1);

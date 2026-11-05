@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 base64 = "0.23.1"
 flate2 = "1.1.10"
+imagesize = "0.15.0"
 lexopt = "0.3.2"
 percent-encoding = "2.3.2"
 png = "0.18.1"

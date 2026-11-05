@@ -290,7 +290,7 @@ fn text_area(style: &Style, b: Rect) -> Rect {
         }
         "process" => {
             let inset = match style.get("fixedSize").is_some_and(|v| v != "0") {
-                true => style.num("size", 0.1).clamp(0.0, b.w),
+                true => style.num("size", 0.1).max(0.0).min(b.w),
                 false => b.w * style.num("size", 0.1).clamp(0.0, 1.0),
             };
             r.x += inset.round();

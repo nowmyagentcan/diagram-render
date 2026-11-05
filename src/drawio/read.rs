@@ -165,8 +165,9 @@ fn geometry(g: Node) -> Geo {
     let mut geo = Geo {
         x: number(g, "x"),
         y: number(g, "y"),
-        w: number(g, "width"),
-        h: number(g, "height"),
+        // mxGraph draws nothing sensible for a negative size, and the shapes count on none.
+        w: number(g, "width").max(0.0),
+        h: number(g, "height").max(0.0),
         relative: g.attribute("relative") == Some("1"),
         ..Geo::default()
     };

@@ -364,8 +364,7 @@ fn a_browser_that_hangs_up_frees_the_page_for_the_next_render() {
 }
 
 #[test]
-#[ignore = "known bug: T1-03"]
-fn a_page_render_that_crashes_leaves_the_server_answering() {
+fn a_scene_that_crashed_the_page_gets_an_answer() {
     let (mut child, port) = page();
     let mut stream = upload(port, "x.excalidraw", rounded_rectangle().as_bytes());
     let mut answer = vec![];
@@ -375,7 +374,9 @@ fn a_page_render_that_crashes_leaves_the_server_answering() {
     let _ = child.kill();
     child.wait().unwrap();
     assert!(up, "the server ended");
-    assert!(answer.starts_with(b"HTTP/1.1 4"), "an error answer");
+    let answer = String::from_utf8_lossy(&answer);
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    assert!(answer.contains("element_skipped"), "{answer}");
 }
 
 /// A scene with `element` and nothing else.
@@ -410,7 +411,6 @@ fn survives(file: &str, source: &[u8], extra: &[&str]) -> Value {
 }
 
 #[test]
-#[ignore = "known bug: T1-03"]
 fn a_negative_size_is_no_crash_in_any_drawio_shape() {
     for style in [
         "swimlane;",
@@ -428,7 +428,6 @@ fn a_negative_size_is_no_crash_in_any_drawio_shape() {
 }
 
 #[test]
-#[ignore = "known bug: T1-03"]
 fn numbers_past_any_screen_are_no_crash_in_excalidraw() {
     survives("x.excalidraw", rounded_rectangle().as_bytes(), &[]);
     let ellipse = scene(
@@ -439,7 +438,6 @@ fn numbers_past_any_screen_are_no_crash_in_excalidraw() {
 }
 
 #[test]
-#[ignore = "known bug: T1-03"]
 fn a_render_that_panics_still_gets_an_mcp_answer() {
     let dir = folder("hostile-mcp-panic");
     let mut mcp = Mcp::start(&dir);
@@ -504,7 +502,6 @@ fn huge_png(side: u32) -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "known bug: T1-04"]
 fn an_embedded_image_over_the_pixel_limit_is_not_unpacked() {
     use base64::Engine;
     let url = format!(

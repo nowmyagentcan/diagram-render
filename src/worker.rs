@@ -191,3 +191,30 @@ fn answer<T: Serialize>(done: Result<(T, Vec<u8>), Error>) -> io::Result<()> {
     out.write_all(&bytes)?;
     out.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_worker_that_dies_is_an_error_for_the_one_that_asked() {
+        // The test binary stands in for the worker, and it knows no such flag.
+        let task = Task {
+            name: "x",
+            lines: Lines::new("x"),
+            job: Job {
+                stdin: b"x",
+                dir: Path::new("."),
+                env: vec![],
+                limit: Duration::from_secs(30),
+                memory: engine::MEMORY_LIMIT,
+            },
+            background: None,
+            page: None,
+            allow_network: false,
+            to: To::Svg,
+        };
+        let e = render(&mut Engine::ours(), Format::Drawio, &task).err();
+        assert_eq!(e.unwrap().code, "engine_failed");
+    }
+}

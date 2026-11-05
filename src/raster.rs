@@ -46,13 +46,17 @@ pub fn fonts() -> Result<Vec<PathBuf>, Error> {
 const SIDE: u64 = 16384;
 const AREA: u64 = 64_000_000;
 
+fn within_limits(width: u64, height: u64) -> bool {
+    width <= SIDE && height <= SIDE && width * height <= AREA
+}
+
 /// The scale to draw a `width` × `height` CSS-pixel diagram at: `scale`, else the largest
 /// scale with 2 decimals whose PNG fits the limits, with a warning; an error below 0.05.
 pub fn fit(width: f64, height: f64, scale: f64) -> Result<(f64, Option<Warning>), Error> {
     let size = |s: f64| (pixels(width, s), pixels(height, s));
     let fits = |s: f64| {
         let (w, h) = size(s);
-        u64::from(w) <= SIDE && u64::from(h) <= SIDE && u64::from(w) * u64::from(h) <= AREA
+        within_limits(w.into(), h.into())
     };
     if fits(scale) {
         return Ok((scale, None));
@@ -182,6 +186,8 @@ pub fn png(
         })?;
     }
     let found = Mutex::new(Found::default());
+    let too_big = Mutex::new(vec![]);
+    let embedded = ImageHrefResolver::default_data_resolver();
     let fallback = FontResolver::default_fallback_selector();
     let tree = usvg::Tree::from_str(
         svg,
@@ -196,13 +202,26 @@ pub fn png(
             },
             // Only images inside the SVG: nothing is read from disk or the network.
             image_href_resolver: ImageHrefResolver {
-                resolve_data: ImageHrefResolver::default_data_resolver(),
+                resolve_data: Box::new(|mime, data, options| {
+                    if let Ok(size) = imagesize::blob_size(&data)
+                        && !within_limits(size.width as u64, size.height as u64)
+                    {
+                        let (w, h) = (size.width as u32, size.height as u32);
+                        too_big
+                            .lock()
+                            .unwrap()
+                            .push(Warning::image_over_limit(w, h));
+                        return None;
+                    }
+                    embedded(mime, data, options)
+                }),
                 resolve_string: Box::new(|_, _| None),
             },
             ..usvg::Options::default()
         },
     )
     .map_err(|e| Error::internal(&format!("the SVG can't be drawn: {e}")))?;
+    warnings.append(&mut too_big.into_inner().unwrap());
     let found = found.into_inner().unwrap();
     for (family, substitute) in found.substituted {
         warnings.push(Warning::font_substituted(&family, substitute));

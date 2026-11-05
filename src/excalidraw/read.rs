@@ -345,6 +345,10 @@ fn element_lines(text: &str, lines: &Lines) -> Vec<usize> {
         .collect()
 }
 
+/// The furthest a coordinate may be from the origin: real scenes stay far inside it, and past it
+/// the curves' arithmetic overflows.
+const FAR: f64 = 1e7;
+
 fn num(e: &Map<String, Value>, key: &str) -> Option<f64> {
     e.get(key).and_then(Value::as_f64).filter(|v| v.is_finite())
 }
@@ -370,7 +374,7 @@ fn points(e: &Map<String, Value>) -> Option<Vec<P>> {
         .map(|p| {
             let p = p.as_array()?;
             let (x, y) = (p.first()?.as_f64()?, p.get(1)?.as_f64()?);
-            (x.is_finite() && y.is_finite()).then_some((x, y))
+            (x.abs() <= FAR && y.abs() <= FAR).then_some((x, y))
         })
         .collect()
 }
@@ -387,6 +391,9 @@ fn element(e: &Map<String, Value>) -> Result<Option<Element>, String> {
     let mut at = [0.0; 4];
     for (slot, key) in at.iter_mut().zip(["x", "y", "width", "height"]) {
         *slot = num(e, key).ok_or_else(|| format!("it has no {key}"))?;
+    }
+    if at.iter().any(|v| v.abs() > FAR) {
+        return Err("its position or size is past any screen".into());
     }
     let [mut x, mut y, mut width, mut height] = at;
     if width < 0.0 {
@@ -446,7 +453,8 @@ fn element(e: &Map<String, Value>) -> Result<Option<Element>, String> {
         fill_style,
         stroke_width: num(e, "strokeWidth").filter(|&w| w != 0.0).unwrap_or(2.0),
         stroke_style,
-        roughness: num(e, "roughness").unwrap_or(1.0),
+        // Excalidraw offers 0 to 2; far past that, offsets overflow the painter.
+        roughness: num(e, "roughness").unwrap_or(1.0).clamp(0.0, 10.0),
         opacity: num(e, "opacity").unwrap_or(100.0),
         seed: num(e, "seed").map_or(1, int32),
         roundness,

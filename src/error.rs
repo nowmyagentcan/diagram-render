@@ -267,6 +267,16 @@ impl Warning {
     }
 
     /// `element_skipped` or `edge_skipped`: `kind` is what the item is, such as `edge`.
+    pub fn image_over_limit(width: u32, height: u32) -> Self {
+        Self {
+            code: "element_skipped",
+            message: format!(
+                "Skipped an embedded image: {width}×{height} px is over the limit of 16384 px and 64 MP."
+            ),
+            line: None,
+        }
+    }
+
     pub fn skipped(code: &'static str, kind: &str, id: &str, reason: &str, line: usize) -> Self {
         Self {
             code,
