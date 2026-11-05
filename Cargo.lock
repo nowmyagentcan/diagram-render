@@ -196,6 +196,7 @@ dependencies = [
  "base64",
  "flate2",
  "lexopt",
+ "libc",
  "percent-encoding",
  "png",
  "quick-xml",

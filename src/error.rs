@@ -1,12 +1,44 @@
 //! Every failure and warning the tool reports: a stable code, a sentence saying what happened, a
 //! sentence saying what to do, and where in the source it is when that is known.
 
+use std::collections::BTreeSet;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 
+/// `text` for as long as the program runs, kept once however often it comes: the worker's answers
+/// carry the same few codes.
+fn kept(text: String) -> &'static str {
+    static KEPT: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+    let mut all = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    match all.get(text.as_str()) {
+        Some(old) => old,
+        None => {
+            let new = text.leak();
+            all.insert(new);
+            new
+        }
+    }
+}
+
+/// A stable code. Named, because serde would otherwise borrow a `&str` field from its input.
+pub type Code = &'static str;
+
+fn kept_code<'de, D: Deserializer<'de>>(d: D) -> Result<&'static str, D::Error> {
+    String::deserialize(d).map(kept)
+}
+
+/// Reads an optional code or name from the worker.
+pub fn kept_option<'de, D: Deserializer<'de>>(d: D) -> Result<Option<&'static str>, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.map(kept))
+}
+
 /// A failure: what went wrong and how to fix it, with its place in the source when known.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Error {
-    pub code: &'static str,
+    #[serde(deserialize_with = "kept_code")]
+    pub code: Code,
     pub message: String,
     pub hint: String,
     pub line: Option<usize>,
@@ -16,7 +48,7 @@ pub struct Error {
 
 /// A source line as shown under an error, cut to 200 characters, and the character (from 1)
 /// the caret points at in that cut text.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Excerpt {
     pub text: String,
     pub caret: Option<usize>,
@@ -25,9 +57,10 @@ pub struct Excerpt {
 }
 
 /// Something worth knowing about a run that still succeeded.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Warning {
-    pub code: &'static str,
+    #[serde(deserialize_with = "kept_code")]
+    pub code: Code,
     pub message: String,
     pub line: Option<usize>,
 }
@@ -594,6 +627,15 @@ impl Error {
             "network_needed",
             "This D2 diagram uses remote images, and the network is off.",
             "Rerun with --allow-network, or render SVG (which links them).",
+        )
+    }
+
+    /// A run stopped at the memory limit.
+    pub fn out_of_memory(mib: u64) -> Self {
+        Self::new(
+            "too_large",
+            format!("Rendering took over {mib} MiB of memory and was stopped."),
+            "Simplify the diagram or split it into smaller ones.",
         )
     }
 

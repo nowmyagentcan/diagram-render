@@ -5,9 +5,11 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use crate::error::{Error, Warning};
+use serde::{Deserialize, Serialize};
+
 use crate::input;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Format {
     Mermaid,
     Dot,

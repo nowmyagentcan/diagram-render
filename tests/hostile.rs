@@ -194,7 +194,6 @@ fn engine_dies_with_its_parent(file: &str, source: &str) {
 }
 
 #[test]
-#[ignore = "known bug: R1-002"]
 fn killing_a_render_stops_its_engine() {
     engine_dies_with_its_parent("slow.dot", &slow_dot());
     let mermaid: String = (0..8100)
@@ -453,7 +452,6 @@ fn a_render_that_panics_still_gets_an_mcp_answer() {
 }
 
 #[test]
-#[ignore = "known bug: R1-004"]
 fn many_filled_shapes_in_a_small_file_have_a_limit() {
     let elements: Vec<Value> = (0..32)
         .map(|i| {
@@ -471,7 +469,6 @@ fn many_filled_shapes_in_a_small_file_have_a_limit() {
 }
 
 #[test]
-#[ignore = "known bug: R1-004"]
 fn one_filled_shape_past_any_screen_has_a_limit() {
     let dir = folder("hostile-one-shape");
     for size in [4294967296.0, 1e38] {
@@ -536,7 +533,6 @@ fn block_nest(depth: usize) -> String {
 }
 
 #[test]
-#[ignore = "known bug: T1-02"]
 fn a_small_mermaid_file_cant_take_all_the_memory() {
     let dir = folder("hostile-merman");
     fs::write(dir.join("x.mmd"), block_nest(3000)).unwrap();

@@ -1,5 +1,6 @@
 //! The engines in `engines/` beside the executable (merman for Mermaid, Graphviz's `dot`, `d2`),
-//! each run as its own process with a cleared environment and a time limit.
+//! each run as its own process with a cleared environment, a time limit and a memory limit, tied
+//! to this process so none outlives it. This binary's own renderers run the same way (`worker`).
 
 use std::env;
 use std::ffi::OsString;
@@ -9,12 +10,15 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
+
 use crate::detect::Format;
-use crate::error::{Error, Warning};
+use crate::error::{Code, Error, Warning, kept_option};
 use crate::input::Lines;
+use crate::leash::{self, Leash};
 use crate::output::To;
 use crate::raster::{self, Png};
-use crate::{bpmn, d2, dot, drawio, excalidraw, mermaid};
+use crate::{d2, dot, mermaid, worker};
 
 /// How long a version check may take. A first start after install can take seconds while the
 /// system scans a 50 MB executable.
@@ -23,6 +27,10 @@ const PROBE_LIMIT: Duration = Duration::from_secs(10);
 /// The most an engine may print: an SVG on stdout, messages on stderr (cut there).
 const STDOUT_CAP: u64 = 512 << 20;
 const STDERR_CAP: u64 = 1 << 20;
+
+/// The most memory a run may hold, so that a small hostile source can't take the computer's. The
+/// largest real diagrams measured stay under 600 MB.
+pub const MEMORY_LIMIT: u64 = 4 << 30;
 
 /// The engine's file name (without `.exe`) and its name in sentences.
 fn names(format: Format) -> Option<(&'static str, &'static str)> {
@@ -56,6 +64,8 @@ pub struct Engine {
     /// Its name in sentences: Mermaid, Graphviz or D2.
     pub label: &'static str,
     pub log: Vec<String>,
+    /// This binary as its own worker, which keeps the environment: fonts are found through it.
+    pub own: bool,
 }
 
 /// What an engine is given besides its arguments.
@@ -67,6 +77,8 @@ pub struct Job<'a> {
     /// Variables set on top of the cleared environment.
     pub env: Vec<(&'static str, OsString)>,
     pub limit: Duration,
+    /// The bytes of memory it may hold.
+    pub memory: u64,
 }
 
 /// What an engine run gave back.
@@ -86,20 +98,35 @@ pub fn locate(format: Format) -> Option<Result<Engine, Error>> {
             exe,
             label,
             log: vec![],
+            own: false,
         }),
         false => Err(Error::engine_missing(label, &exe.display().to_string())),
     })
 }
 
 impl Engine {
+    /// This binary, for what it draws itself.
+    pub fn ours() -> Self {
+        Self {
+            exe: env::current_exe().unwrap_or_default(),
+            label: "diagram-render",
+            log: vec![],
+            own: true,
+        }
+    }
+
     /// Runs the engine with `args` and `job`, with only what the system needs in its
     /// environment, so variables such as `D2_LAYOUT` and programs on the user's PATH can't
-    /// change what it does. `None` when it was stopped at the limit; it is reaped either way.
+    /// change what it does. `None` when it was stopped at the time limit; past the memory limit
+    /// it is `too_large`. It is reaped either way.
     pub fn run(&mut self, args: &[&str], job: &Job) -> Result<Option<Ran>, Error> {
         let mut cmd = Command::new(&self.exe);
+        if !self.own {
+            cmd.env_clear()
+                .env("PATH", self.exe.parent().unwrap_or(Path::new(".")));
+        }
+        leash::prepare(&mut cmd);
         cmd.args(args)
-            .env_clear()
-            .env("PATH", self.exe.parent().unwrap_or(Path::new(".")))
             .envs(job.env.iter().map(|(k, v)| (k, v)))
             .current_dir(job.dir)
             .stdin(Stdio::piped())
@@ -125,6 +152,11 @@ impl Engine {
             Error::engine_unstartable(self.label, &e)
         })?;
         let pid = child.id();
+        let leash = Leash::new(&child);
+        if let Err(e) = &leash {
+            self.log.push(format!("not tied to this process: {e}"));
+        }
+        let mut memory_out = false;
         let (stdin, out, err) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let ran = thread::scope(|s| {
             s.spawn(move || {
@@ -137,7 +169,8 @@ impl Engine {
                 if let Some(status) = child.try_wait()? {
                     break Some(status);
                 }
-                if start.elapsed() >= job.limit {
+                memory_out = leash.as_ref().is_ok_and(|l| l.memory() > job.memory);
+                if memory_out || start.elapsed() >= job.limit {
                     child.kill()?;
                     child.wait()?;
                     break None;
@@ -150,6 +183,11 @@ impl Engine {
         let ms = start.elapsed().as_millis();
         let (status, (stdout, over), (stderr, _)) = match ran {
             Ok(Some(ran)) => ran,
+            Ok(None) if memory_out => {
+                let mib = job.memory >> 20;
+                self.log.push(format!("stopped over {mib} MiB (pid {pid})"));
+                return Err(Error::out_of_memory(mib));
+            }
             Ok(None) => {
                 let s = job.limit.as_secs_f64();
                 self.log.push(format!("stopped after {s} s (pid {pid})"));
@@ -189,6 +227,7 @@ impl Engine {
             dir: &folder(),
             env: vec![],
             limit: PROBE_LIMIT,
+            memory: MEMORY_LIMIT,
         };
         match self.run(args, &job)? {
             Some(ran) if ran.code == Some(0) => Ok(ran),
@@ -214,6 +253,7 @@ pub struct Task<'a> {
 }
 
 /// A page of a diagram file: its number (from 1) when it has one, and its name.
+#[derive(Serialize, Deserialize)]
 pub struct Page {
     pub index: Option<usize>,
     pub name: String,
@@ -227,23 +267,26 @@ impl Page {
 
 /// An SVG and what was warned about while making it; for files with pages, the one drawn and
 /// every page; and the kind of diagram, when only drawing it tells.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Rendered {
+    #[serde(skip)]
     pub svg: Vec<u8>,
     pub warnings: Vec<Warning>,
     pub page: Option<Page>,
     pub pages: Vec<Page>,
-    pub diagram_type: Option<&'static str>,
+    #[serde(deserialize_with = "kept_option")]
+    pub diagram_type: Option<Code>,
     /// Unsafe items a renderer of ours left out before writing the SVG.
     pub removed: usize,
 }
 
 /// What a check found.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Checked {
     pub errors: Vec<Error>,
     pub warnings: Vec<Warning>,
-    pub diagram_type: Option<&'static str>,
+    #[serde(deserialize_with = "kept_option")]
+    pub diagram_type: Option<Code>,
 }
 
 impl Engine {
@@ -260,10 +303,8 @@ pub fn render(format: Format, engine: Option<&mut Engine>, task: &Task) -> Resul
         (Format::Mermaid, Some(engine)) => mermaid::render(engine, task),
         (Format::Dot, Some(engine)) => dot::render(engine, task),
         (Format::D2, Some(engine)) => d2::render(engine, task),
-        (Format::Bpmn, _) => bpmn::render(task),
-        (Format::Drawio, _) => drawio::render(task),
-        (Format::Excalidraw, _) => excalidraw::render(task),
-        _ => Err(Error::internal("no renderer is built in yet")),
+        (_, Some(engine)) => worker::render(engine, format, task),
+        _ => Err(Error::internal("no engine was found")),
     }
 }
 
@@ -281,8 +322,11 @@ pub fn png(
         (Format::Mermaid, Some(engine)) => mermaid::png(engine, task, scale, warnings),
         (Format::D2, Some(engine)) => d2::png(engine, task, svg, scale),
         // Graphviz measures a family it has no widths for as Times.
-        (Format::Dot, _) => raster::png(svg, scale, raster::SERIF, warnings),
-        _ => raster::png(svg, scale, raster::SANS, warnings),
+        (Format::Dot, Some(engine)) => {
+            worker::png(engine, task, svg, scale, raster::SERIF, warnings)
+        }
+        (_, Some(engine)) => worker::png(engine, task, svg, scale, raster::SANS, warnings),
+        _ => Err(Error::internal("no engine was found")),
     }
 }
 
@@ -293,10 +337,8 @@ pub fn check(format: Format, engine: Option<&mut Engine>, task: &Task) -> Result
         (Format::Mermaid, Some(engine)) => mermaid::check(engine, task),
         (Format::Dot, Some(engine)) => dot::check(engine, task),
         (Format::D2, Some(engine)) => d2::check(engine, task),
-        (Format::Bpmn, _) => bpmn::check(task),
-        (Format::Drawio, _) => drawio::check(task),
-        (Format::Excalidraw, _) => excalidraw::check(task),
-        _ => Err(Error::internal("no checker is built in yet")),
+        (_, Some(engine)) => worker::check(engine, format, task),
+        _ => Err(Error::internal("no engine was found")),
     }
 }
 
@@ -365,6 +407,7 @@ mod tests {
             exe: dir.join(format!("{file}{}", env::consts::EXE_SUFFIX)),
             label,
             log: vec![],
+            own: false,
         }
     }
 
@@ -374,6 +417,7 @@ mod tests {
             dir: Path::new("."),
             env: vec![],
             limit,
+            memory: MEMORY_LIMIT,
         }
     }
 
@@ -414,6 +458,34 @@ mod tests {
             "{:?}",
             dot.log
         );
+    }
+
+    #[test]
+    fn an_engine_past_the_memory_limit_is_stopped() {
+        // Under 1 KB: each variable doubles the last, gigabytes by the end.
+        let mut d2 = String::from("vars: {\n  a0: xxxxxxxxxxxxxxxx\n");
+        for i in 1..32 {
+            d2 += &format!("  a{i}: ${{a{}}}${{a{}}}\n", i - 1, i - 1);
+        }
+        d2 += "}\nb: ${a31}\n";
+        let cases = [
+            ("d2", "D2", vec!["-", "-"], d2),
+            (
+                "dot",
+                "Graphviz",
+                vec!["-Tsvg"],
+                "digraph { a [peripheries=100000000] }".into(),
+            ),
+        ];
+        for (file, label, args, source) in cases {
+            let mut run = engine(file, label);
+            let job = Job {
+                memory: 200 << 20,
+                ..job(source.as_bytes(), Duration::from_secs(30))
+            };
+            let e = run.run(&args, &job).err().expect(file);
+            assert_eq!(e.code, "too_large", "{file}: {}", e.message);
+        }
     }
 
     #[test]

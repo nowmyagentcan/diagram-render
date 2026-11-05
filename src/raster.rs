@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::fontdb::{self, Database, Family, ID};
 use resvg::usvg::{self, FontFamily, FontResolver, FontStretch, FontStyle, ImageHrefResolver};
+use serde::{Deserialize, Serialize};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::{FontRef, MetadataProvider};
 
@@ -76,7 +77,9 @@ pub fn fit(width: f64, height: f64, scale: f64) -> Result<(f64, Option<Warning>)
 }
 
 /// A PNG and its size in pixels.
+#[derive(Serialize, Deserialize)]
 pub struct Png {
+    #[serde(skip)]
     pub bytes: Vec<u8>,
     pub width: u32,
     pub height: u32,

@@ -10,7 +10,16 @@ use crate::raster::{self, Png};
 
 pub fn render(engine: &mut Engine, task: &Task) -> Result<Rendered, Error> {
     let (fonts, _) = fonts(task)?;
-    let svg = run(engine, task, &["--format", "svg"], &fonts)?;
+    // Past merman's default budgets for spec's large.mmd, short of what a hostile nest needs.
+    let args = [
+        "--format",
+        "svg",
+        "--resource-limit",
+        "max_layout_work_units=2000000000",
+        "--resource-limit",
+        "max_scheduling_weight_bytes=1000000000000",
+    ];
+    let svg = run(engine, task, &args, &fonts)?;
     Ok(Rendered {
         svg,
         ..Rendered::default()
@@ -26,8 +35,11 @@ pub fn png(
 ) -> Result<Png, Error> {
     let (fonts, missing) = fonts(task)?;
     let scale = scale.to_string();
-    // merman's own default limits are 4096 px; ours are checked already.
+    // merman's own default limits are 4096 px; ours are checked already. Its filter budget can't
+    // be raised by name, and the SVG run has passed the budgets that matter.
     let args = [
+        "--resource-profile",
+        "unbounded-for-trusted-input",
         "--format",
         "png",
         "--scale",
@@ -84,9 +96,6 @@ fn run(
         "--operation-timeout-ms",
         &ms,
         "--quiet",
-        // Its budgets stop a flowchart of 300 nodes; --timeout is what bounds a render here.
-        "--resource-profile",
-        "unbounded-for-trusted-input",
     ];
     let fonts = fonts.iter().map(String::as_str);
     let args: Vec<&str> = common
@@ -95,8 +104,14 @@ fn run(
         .chain(fonts)
         .collect();
     let ran = engine.go(&args, task)?;
+    let stderr = String::from_utf8_lossy(&ran.stderr);
+    let said = stderr.lines().next().unwrap_or("no message");
     match ran.code {
         Some(0) => Ok(ran.stdout),
+        // A source past merman's budgets is no syntax error, and lint can take minutes on it.
+        Some(1) if said.starts_with("resource limit") => {
+            Err(Error::render_failed("Mermaid", said, task.name))
+        }
         Some(1) => Err(
             match lint(engine, task, Some(task.name))?
                 .errors
@@ -104,11 +119,7 @@ fn run(
                 .next()
             {
                 Some(e) => e,
-                None => {
-                    let stderr = String::from_utf8_lossy(&ran.stderr);
-                    let said = stderr.lines().next().unwrap_or("no message");
-                    Error::render_failed("Mermaid", said, task.name)
-                }
+                None => Error::render_failed("Mermaid", said, task.name),
             },
         ),
         _ => Err(engine.failed(&ran)),

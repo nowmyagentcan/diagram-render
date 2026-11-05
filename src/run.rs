@@ -162,7 +162,7 @@ pub fn open<'a>(
         warnings: diagram.warnings,
     };
     let engine = match engine::locate(diagram.format).transpose() {
-        Ok(engine) => engine,
+        Ok(engine) => engine.or_else(|| Some(Engine::ours())),
         Err(error) => return Err(Stopped::new(error, known)),
     };
     // The engine's folder for relative imports and images: the input's, else the current one.
@@ -189,6 +189,7 @@ impl Opened<'_> {
                 dir: &self.dir,
                 env: vec![],
                 limit: Duration::from_secs(self.choices.timeout.unwrap_or(60)),
+                memory: engine::MEMORY_LIMIT,
             },
             background: self.choices.background.as_deref(),
             page: self.choices.page.as_deref(),

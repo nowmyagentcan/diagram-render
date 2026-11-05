@@ -10,6 +10,7 @@ mod error;
 mod excalidraw;
 mod input;
 mod interactive;
+mod leash;
 mod mcp;
 mod mermaid;
 mod output;
@@ -18,6 +19,7 @@ mod run;
 mod svg;
 mod text;
 mod ui;
+mod worker;
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
@@ -192,6 +194,11 @@ enum Parsed {
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    if let [flag, request] = &args[..]
+        && flag == worker::FLAG
+    {
+        return worker::serve(&request.to_string_lossy());
+    }
     if args.is_empty() {
         if double_clicked() {
             let dot = Look::stdout().pick("·", "-");
