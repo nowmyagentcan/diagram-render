@@ -118,6 +118,7 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - With `--allow-network`, a D2 image URL that answers with a non-image gives an SVG without it and exit 0, with a misleading warning or none. A PNG stops with an error.
 - `SSL_CERT_FILE` doesn't reach d2; a private CA must be in the system store.
 - A DOT `network_path` message can show the rest of the source line after the path.
+- The Linux and macOS archives have no top folder and record their owner as uid 1001, so extracting one as root in place hands the current folder to that uid. Extract into a new, empty folder, and use `tar --no-same-owner -xzf` as root. The install script isn't affected.
 - The Windows installer doubles a `;` that ends the user PATH. Deleting the folder leaves the PATH entry, or the `~/.local/bin` link.
 - Testing gaps: on Windows the proxy use under `--allow-network` has no test, and two more D2 tests that start from offline remote images don't run there. D2's `image` fixture is compared there only with `--allow-network`; the network-path place test covers Windows and DOT alone. The piped MCP answer loss has no test.
 - Two tests have failed under heavy load on Linux, one for an unproven cause. One memory test's assertion is looser than it should be, and one doc comment in the source is misplaced. Some minor findings of the last pass were never written down, so they aren't listed here.
