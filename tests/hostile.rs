@@ -867,18 +867,18 @@ fn a_long_source_cant_hold_a_run_past_its_time_limit() {
 #[test]
 fn a_network_path_is_refused_at_its_place_in_render_and_check() {
     let dir = folder("hostile-path-place");
-    for (file, source) in [("x.dot", "digraph {\n  a [image=\"//host/s/x.png\"]\n}\n")] {
-        fs::write(dir.join(file), source).unwrap();
-        let (code, out, _) = run_in(&dir, &[file, "--json"], b"");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(code, 1, "{out}");
-        assert_eq!(v["error"]["code"], "network_path", "{out}");
-        assert_eq!(v["error"]["line"], 2, "{out}");
-        let (code, out, _) = run_in(&dir, &["check", file, "--json"], b"");
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(code, 1, "{out}");
-        assert_eq!(v["errors"][0]["code"], "network_path", "{out}");
-    }
+    let file = "x.dot";
+    let source = "digraph {\n  a [image=\"//host/s/x.png\"]\n}\n";
+    fs::write(dir.join(file), source).unwrap();
+    let (code, out, _) = run_in(&dir, &[file, "--json"], b"");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(v["error"]["code"], "network_path", "{out}");
+    assert_eq!(v["error"]["line"], 2, "{out}");
+    let (code, out, _) = run_in(&dir, &["check", file, "--json"], b"");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(v["errors"][0]["code"], "network_path", "{out}");
 }
 
 /// Serves `head` to whoever connects.

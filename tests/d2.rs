@@ -4,7 +4,10 @@
 mod common;
 
 use std::fs;
-use std::io::{Read, Write};
+#[cfg(not(windows))]
+use std::io::Read;
+use std::io::Write;
+#[cfg(not(windows))]
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -256,6 +259,7 @@ exit 1
 }
 
 /// A listener on a free local port, and the URL of an image on it.
+#[cfg(not(windows))]
 fn image_server() -> (TcpListener, String) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/pixel.png", listener.local_addr().unwrap());
