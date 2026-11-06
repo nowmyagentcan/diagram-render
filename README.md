@@ -2,6 +2,18 @@
 
 Turn Mermaid, Graphviz DOT, D2, BPMN, draw.io and Excalidraw files into SVG or PNG on your own computer, with no browser and no server, and check them for errors by line.
 
+![The local page after rendering a Mermaid flowchart to SVG](.github/screenshot.png)
+
+## Read this first
+
+This is a first release and it hasn't had a full final test round: the last pass was cut short, and the known issues are listed under [Supported inputs and limits](#known-issues).
+
+- **D2 on Windows:** without `--allow-network`, D2 files using `@` imports, icons, images, or `${...}` with a path are refused with `network_needed`, even if every file is local. So local images need that option. It goes by the text: any `@`, `icon` or `image`, even in a label, or `${` in a file with a `/`, `\` or `<`.
+- **`--allow-network`:** with it, D2 can reach network paths, including Windows shares, as well as image URLs. Use it only on diagrams you trust.
+- **DOT on Windows:** a network path written in a DOT file stops with `network_path`, but a symlink in DOT can reach a network path. The link needs Developer Mode or elevation to exist.
+- **How far "offline" goes on Windows:** it rests on reading the diagram's text, not on a system barrier. A set of hostile files reached no test listener; that's a test set, not a proof.
+- **Speed:** the target for a small diagram is 100 ms for BPMN, draw.io and Excalidraw SVGs; Mermaid, DOT and D2 take longer. Large Mermaid and D2 PNGs miss the speed target: on the test PC about 6 s for a 300-node Mermaid flowchart and 4 s for a 200-shape D2 file, each over 2 s more than its SVG.
+
 ## Install
 
 Windows (PowerShell, no admin; installs to `%LOCALAPPDATA%\Programs\diagram-render` and adds it to your user PATH):
@@ -89,10 +101,26 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - Text in PNGs uses the bundled fonts. Characters they don't have, such as Chinese, Japanese or Korean, come from this computer's fonts, with a warning, so those images can differ between computers.
 - Graphviz `image=` files stay links in the SVG and are left out of PNGs.
 - Not read: PlantUML, Visio, or Markdown files with diagrams inside. Not written: PDF, JPEG or animated SVG.
-- It makes no network requests. The one exception is D2 with `--allow-network`, which fetches the image URLs written in your diagram. Without it, D2 SVGs keep those images as links, and D2 PNGs that need them stop with an error saying so.
-- On Windows a path such as `//host/x.png` makes the system contact that host, so a DOT source naming one stops with `network_path`. A file link to a network path in a DOT diagram isn't caught.
-- On Windows a D2 diagram with imports, icons or images stops with `network_needed` unless you pass `--allow-network`, even for local files, because d2 can reach a network path through them. So can a variable used with `/`, `\` or `<`, and an `@` anywhere in the text is read as an import. With `--allow-network` D2 can also open network paths, so use it only on diagrams you trust.
-- MCP `path` and `output` refuse network paths on Windows; a path you type on the command line is opened as given. On Linux and macOS `//host/x.png` is a plain local path, and none of this applies.
+- It has no telemetry, update check or account. Apart from what's listed in [Read this first](#read-this-first), the one network use is D2 with `--allow-network`, which fetches the image URLs written in your diagram. The installers download from GitHub.
+- On Linux and macOS, without that option, D2 SVGs keep remote images as links, which your viewer may fetch; D2 PNGs that need them stop with `network_needed`. On Windows such a file stops with `network_needed` in both.
+- On Windows a path such as `//host/x.png` makes the system contact that host. MCP `path` and `output` refuse network paths, but follow a link to a share. A path you type on the command line is opened as given. On Linux `//host/x.png` is a plain local path; macOS `/net/host/...` automounts weren't tested.
+
+### Known issues
+
+- A browser or MCP client that leaves or cancels doesn't stop its render; the next one waits for it, up to the time limit. MCP `ping` waits too.
+- Requests piped into `diagram-render mcp` can lose an answer when stdin closes at once (rare; a client that keeps stdin open is fine). Malformed JSON gets no reply.
+- In a DOT file with several graphs only the first is drawn, yet a bad or slow later graph still fails the run, and its error can name the wrong line.
+- `--page 2` doesn't pick a D2 board by number; give its path, such as `layers.deploy`.
+- Files with bare CR line ends get wrong line numbers and can be read as the wrong format.
+- On Windows an input folder over 260 characters fails for Mermaid, DOT and D2 with `engine_failed` and a misleading "Reinstall" hint. So can a run out of memory.
+- Numbers too big for a float in BPMN, draw.io or Excalidraw files give an SVG holding `inf` with exit 0; a PNG can fail with `internal`.
+- draw.io cells that parent each other vanish: a blank SVG, exit 0, no warning.
+- With `--allow-network`, a D2 image URL that answers with a non-image gives an SVG without it and exit 0, with a misleading warning or none. A PNG stops with an error.
+- `SSL_CERT_FILE` doesn't reach d2; a private CA must be in the system store.
+- A DOT `network_path` message can show the rest of the source line after the path.
+- The Windows installer doubles a `;` that ends the user PATH. Deleting the folder leaves the PATH entry, or the `~/.local/bin` link.
+- Testing gaps: on Windows the proxy use under `--allow-network` has no test, and two more D2 tests that start from offline remote images don't run there. D2's `image` fixture is compared there only with `--allow-network`; the network-path place test covers Windows and DOT alone. The piped MCP answer loss has no test.
+- Two tests have failed under heavy load on Linux, one for an unproven cause. Some minor findings of the last pass were never written down, so they aren't listed here.
 
 ## How it works
 
