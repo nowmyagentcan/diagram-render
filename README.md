@@ -12,7 +12,7 @@ This is a first release and it hasn't had a full final test round: the last pass
 - **`--allow-network`:** with it, D2 can reach network paths, including Windows shares, as well as image URLs. Use it only on diagrams you trust.
 - **DOT on Windows:** a network path written in a DOT file stops with `network_path`, but a symlink in DOT can reach a network path. The link needs Developer Mode or elevation to exist.
 - **How far "offline" goes on Windows:** it rests on reading the diagram's text, not on a system barrier. A set of hostile files reached no test listener; that's a test set, not a proof.
-- **Speed:** the target for a small diagram is 100 ms for BPMN, draw.io and Excalidraw SVGs; Mermaid, DOT and D2 take longer. Large Mermaid and D2 PNGs miss the speed target: on the test PC about 6 s for a 300-node Mermaid flowchart and 4 s for a 200-shape D2 file, each over 2 s more than its SVG.
+- **Speed:** the target for a small diagram is 100 ms for BPMN, draw.io and Excalidraw SVGs; Mermaid, DOT and D2 take longer. Large Mermaid and D2 PNGs miss the speed target: the target is 2 s more than the SVG, and on the test PC a 300-node Mermaid flowchart takes 2.8 s more (3.2 s in all) and a 200-shape D2 file 2.1 s more (2.3 s).
 
 ## Install
 
@@ -120,7 +120,7 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - A DOT `network_path` message can show the rest of the source line after the path.
 - The Windows installer doubles a `;` that ends the user PATH. Deleting the folder leaves the PATH entry, or the `~/.local/bin` link.
 - Testing gaps: on Windows the proxy use under `--allow-network` has no test, and two more D2 tests that start from offline remote images don't run there. D2's `image` fixture is compared there only with `--allow-network`; the network-path place test covers Windows and DOT alone. The piped MCP answer loss has no test.
-- Two tests have failed under heavy load on Linux, one for an unproven cause. Some minor findings of the last pass were never written down, so they aren't listed here.
+- Two tests have failed under heavy load on Linux, one for an unproven cause. One memory test's assertion is looser than it should be, and one doc comment in the source is misplaced. Some minor findings of the last pass were never written down, so they aren't listed here.
 
 ## How it works
 
