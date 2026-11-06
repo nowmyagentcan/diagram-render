@@ -683,23 +683,6 @@ fn a_bomb_in_any_compressed_wrapper_is_too_large() {
     }
 }
 
-/// A listener on a free port and every request it sees, on a thread of its own.
-fn canary() -> (String, std::sync::mpsc::Receiver<String>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let (send, seen) = std::sync::mpsc::channel();
-    thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let mut stream = stream;
-            let mut head = vec![0; 512];
-            let n = stream.read(&mut head).unwrap_or(0);
-            let _ = send.send(String::from_utf8_lossy(&head[..n]).into_owned());
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
-        }
-    });
-    (url, seen)
-}
-
 #[test]
 fn nothing_named_in_a_diagram_is_fetched_without_the_option() {
     let (url, seen) = canary();
@@ -797,19 +780,94 @@ fn a_network_path_in_a_diagram_is_not_opened_without_the_option() {
         fs::write(dir.join("imported.d2"), import).unwrap();
         let (code, out, _) = run_in(&dir, &[file, "-o", "x.svg", "--json"], b"");
         assert_eq!(code, 1, "{file}: {out}");
-        assert!(out.contains("network_path"), "{file}: {out}");
+        let code = if file.ends_with(".d2") {
+            "network_needed"
+        } else {
+            "network_path"
+        };
+        assert!(out.contains(code), "{file}: {out}");
         thread::sleep(Duration::from_millis(400));
         assert_eq!(seen.try_iter().count(), 0, "{file} reached the network");
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn a_path_only_d2_can_see_is_not_opened() {
+    // `{h}` is the listener. None of these has a path a reader of the source could find.
+    let image = r#"\"/><image href=\"//{h}/s/x.png\"/>"#;
+    let sources = [
+        r#"...@"sp ace""#.to_string(),
+        "vars: {p: https://x; \"p\": /}\na: {shape: image; icon: ${p}/{h}/s/x.png}".to_string(),
+        r#"...@"\\\\{h}\\s\\x""#.to_string(),
+        r#"...@"\\\\?\\UNC\\{h}\\s\\x""#.to_string(),
+        r#"...@"\\\\.\\UNC\\{h}\\s\\x""#.to_string(),
+        format!("a: {{shape: sql_table; x: int {{constraint: \"{image}\"}}}}"),
+        format!("classes: {{\"c{image}\": {{style.opacity: 0.5}}}}\na.class: \"c{image}\""),
+    ];
+    for source in sources {
+        let (url, seen) = canary();
+        let host = format!("127.0.0.1@{}", url.rsplit(':').next().unwrap());
+        let dir = folder("hostile-unseen");
+        fs::write(dir.join("x.d2"), source.replace("{h}", &host)).unwrap();
+        let imported = format!("b: {{shape: image; icon: //{host}/s/x.png}}");
+        fs::write(dir.join("sp ace.d2"), imported).unwrap();
+        for args in [
+            &["x.d2", "-o", "x.svg", "--json"][..],
+            &["x.d2", "-o", "x.png", "--json"],
+            &["check", "x.d2", "--json"],
+        ] {
+            let (code, out, _) = run_in(&dir, args, b"");
+            assert_eq!(code, 1, "{source} {args:?}: {out}");
+            assert!(out.contains("network_needed"), "{source} {args:?}: {out}");
+        }
+        thread::sleep(Duration::from_millis(400));
+        assert_eq!(seen.try_iter().count(), 0, "{source} reached the network");
+    }
+}
+
+#[test]
+fn text_that_only_looks_like_a_path_is_drawn() {
+    let dir = folder("hostile-plain-text");
+    for source in [
+        "api: //v1/users\n",
+        "a -> b: //internal/queue\n",
+        "# docs: //wiki/page\na\n",
+        "a: {tooltip: //wiki/page}\n",
+        "a: {link: //wiki/page}\n",
+        "a: |go\n  \"k\": \"//v\"\n|\n",
+        "a: |md\n  Note: //server/share\n|\n",
+    ] {
+        fs::write(dir.join("x.d2"), source).unwrap();
+        let (code, out, _) = run_in(&dir, &["x.d2", "-o", "x.svg", "--json"], b"");
+        assert_eq!(code, 0, "{source}: {out}");
+    }
+}
+
+#[test]
+fn a_long_source_cant_hold_a_run_past_its_time_limit() {
+    let dir = folder("hostile-long-source");
+    for (name, source) in [
+        ("dots", format!("...@{}b\n", "a.".repeat(60_000))),
+        ("ats", format!("a: |md\n{}\n|\n", "@x.y.z ".repeat(300_000))),
+    ] {
+        fs::write(dir.join("x.d2"), source).unwrap();
+        let mut child = cmd(&["x.d2", "-o", "x.svg", "--json", "--timeout", "2"]);
+        let mut child = (child.current_dir(&dir))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ended = within(&mut child, Duration::from_secs(30));
+        assert!(ended.is_some(), "{name} was still running after 30 s");
+    }
+}
+
+#[cfg(windows)]
 #[test]
 fn a_network_path_is_refused_at_its_place_in_render_and_check() {
     let dir = folder("hostile-path-place");
-    for (file, source) in [
-        ("x.dot", "digraph {\n  a [image=\"//host/s/x.png\"]\n}\n"),
-        ("x.d2", "a\nb.icon: //host/s/x.png\n"),
-    ] {
+    for (file, source) in [("x.dot", "digraph {\n  a [image=\"//host/s/x.png\"]\n}\n")] {
         fs::write(dir.join(file), source).unwrap();
         let (code, out, _) = run_in(&dir, &[file, "--json"], b"");
         let v: Value = serde_json::from_str(&out).unwrap();
@@ -917,6 +975,7 @@ fn allow_network_follows_a_redirect_and_stops_at_a_loop() {
     assert!(svg.contains("data:image/png;base64,"), "{out}");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn the_users_proxy_is_used_only_with_the_option() {
     let (proxy, seen) = canary();

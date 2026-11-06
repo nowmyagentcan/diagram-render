@@ -62,6 +62,91 @@ fn call(dir: &Path, tool: &str, arguments: Value) -> Value {
     session(dir, &[message]).pop().unwrap()["result"].clone()
 }
 
+#[cfg(windows)]
+#[test]
+fn a_network_path_is_refused_for_input_and_output() {
+    let dir = folder("mcp-network");
+    let (url, seen) = canary();
+    let host = format!("127.0.0.1@{}", url.rsplit(':').next().unwrap());
+    for path in [
+        format!("//{host}/s/x.dot"),
+        format!(r"\\{host}\s\x.dot"),
+        format!(r"/\{host}\s\x.dot"),
+        format!(r"\\?\UNC\{host}\s\x.dot"),
+        format!(r"\\.\UNC\{host}\s\x.dot"),
+        format!(r"\??\UNC\{host}\s\x.dot"),
+    ] {
+        let output = path.replace(".dot", ".svg");
+        for (tool, arguments) in [
+            ("render_diagram", json!({"path": path})),
+            ("check_diagram", json!({"path": path})),
+            (
+                "render_diagram",
+                json!({"source": "digraph {a}", "format": "dot", "output": output}),
+            ),
+        ] {
+            let result = call(&dir, tool, arguments);
+            assert_eq!(result["isError"], true, "{path}: {result}");
+            assert_eq!(text(&result)["error"]["code"], "network_path", "{path}");
+        }
+    }
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    assert_eq!(seen.try_iter().count(), 0, "a path reached the network");
+    fs::write(dir.join("x.dot"), "digraph {a}").unwrap();
+    let verbatim = format!(r"\\?\{}", dir.join("x.dot").display());
+    let result = call(&dir, "check_diagram", json!({"path": verbatim}));
+    assert_eq!(text(&result)["valid"], true, "{result}");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_running_server_keeps_its_worker_after_an_upgrade_by_rename() {
+    let bin = installed("mcp-upgrade", &[]);
+    let dir = bin.parent().unwrap();
+    std::os::unix::fs::symlink(Path::new(BIN).with_file_name("fonts"), dir.join("fonts")).unwrap();
+    let mut command = Command::new(&bin);
+    command
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    // A fresh copy is busy while a sibling test's fork holds its write handle.
+    let mut child = loop {
+        match command.spawn() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            spawned => break spawned.unwrap(),
+        }
+    };
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    writeln!(stdin, "{INITIALIZE}").unwrap();
+    lines.next().unwrap().unwrap();
+    writeln!(
+        stdin,
+        r#"{{"jsonrpc":"2.0","method":"notifications/initialized"}}"#
+    )
+    .unwrap();
+    // What both installers do: a new file beside the old one, renamed over it.
+    let next = dir.join("next");
+    fs::copy(BIN, &next).unwrap();
+    fs::rename(&next, &bin).unwrap();
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/drawio/pages.drawio");
+    let source = fs::read_to_string(file).unwrap();
+    let call = json!({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "render_diagram",
+                   "arguments": {"source": source, "format": "drawio", "preview": false}},
+    });
+    writeln!(stdin, "{call}").unwrap();
+    let answer: Value = serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+    drop(stdin);
+    child.wait().unwrap();
+    let result = &answer["result"];
+    assert!(result.get("isError").is_none_or(|e| e == false), "{answer}");
+}
+
 /// The JSON of a result's text block.
 fn text(result: &Value) -> Value {
     let content = result["content"].as_array().unwrap();
@@ -263,6 +348,7 @@ fn a_preview_keeps_within_a_million_bytes() {
     assert!(png.len() >= 200_000, "{}", png.len());
 }
 
+#[cfg(not(windows))]
 #[test]
 fn a_d2_diagram_that_needs_the_network_renders_without_a_preview() {
     let dir = folder("mcp-remote");

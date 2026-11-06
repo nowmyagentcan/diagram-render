@@ -108,7 +108,11 @@ impl Engine {
     /// This binary, for what it draws itself.
     pub fn ours() -> Self {
         Self {
-            exe: env::current_exe().unwrap_or_default(),
+            // An upgrade may have renamed a new file over the one running; this still opens it.
+            exe: match cfg!(target_os = "linux") {
+                true => "/proc/self/exe".into(),
+                false => env::current_exe().unwrap_or_default(),
+            },
             label: "diagram-render",
             log: vec![],
             own: true,

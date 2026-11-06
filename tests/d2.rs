@@ -75,7 +75,8 @@ fn every_fixture_renders_as_d2_itself_renders_it() {
         "-",
         "-",
     ];
-    for name in FIXTURES {
+    // On Windows a D2 image takes --allow-network.
+    for name in FIXTURES.iter().filter(|n| !cfg!(windows) || **n != "image") {
         let input = format!("{name}.d2");
         let (code, out, err) = run_in(&dir, &[&input, "--json"], b"");
         assert_eq!((code, err.as_str()), (0, ""), "{name}: {out}");
@@ -98,6 +99,10 @@ fn every_fixture_renders_as_d2_itself_renders_it() {
             root.contains(&format!(" width=\"{}\"", v["width"])),
             "{name}: {root}"
         );
+    }
+    if cfg!(windows) {
+        let (code, out, _) = run_in(&dir, &["image.d2", "--json", "--allow-network"], b"");
+        assert_eq!(code, 0, "{out}");
     }
     let svg = fs::read_to_string(dir.join("image.svg")).unwrap();
     assert!(
@@ -257,6 +262,7 @@ fn image_server() -> (TcpListener, String) {
     (listener, url)
 }
 
+#[cfg(not(windows))]
 #[test]
 fn remote_images_stay_links_offline_and_are_fetched_with_allow_network() {
     let dir = fixtures("d2-network");

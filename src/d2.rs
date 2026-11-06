@@ -84,8 +84,8 @@ fn run(
     more: Option<&str>,
     png: Option<f64>,
 ) -> Result<Result<Rendered, Vec<Error>>, Error> {
-    if let Some(found) = netpath::d2(task.lines.text(), task.job.dir) {
-        return Ok(Err(vec![task.lines.refuse(&found)]));
+    if cfg!(windows) && !task.allow_network && netpath::d2_opens_files(task.lines.text()) {
+        return Ok(Err(vec![Error::d2_files_need_network()]));
     }
     let target = format!("--target={}", task.page.unwrap_or(""));
     // d2's own limit sits past ours, so ours stops it and says why.

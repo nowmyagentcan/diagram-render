@@ -20,10 +20,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::error::{Error, Warning};
-use crate::input;
 use crate::output::{self, Target, To};
 use crate::run::{self, Opened, Options, Source, Stopped};
 use crate::text::Made;
+use crate::{input, netpath};
 
 /// The most a `source` argument may hold.
 const SOURCE_LIMIT: usize = 4 << 20;
@@ -172,6 +172,7 @@ impl Input {
                 let name = "-".into();
                 Ok((Self { name, file: false }, Ok(source.into_bytes())))
             }
+            (None, Some(name)) if netpath::network(&name) => Err(Error::network_path(&name)),
             (None, Some(name)) => {
                 let bytes = input::read_file(OsStr::new(&name));
                 Ok((Self { name, file: true }, bytes))
@@ -208,6 +209,9 @@ fn render(args: RenderArgs, debugging: bool) -> Result<CallToolResult, Value> {
         timeout: args.timeout,
     };
     let (choices, to) = options.choices().map_err(usage)?;
+    if let Some(output) = args.output.as_deref().filter(|o| netpath::network(o)) {
+        return Err(usage(Error::network_path(output)));
+    }
     let target = (args.output.map(|o| output::named(o.into(), to)).transpose()).map_err(usage)?;
     let to = target.as_ref().map(|t| t.1).or(to).unwrap_or(To::Svg);
     let (input, bytes) = Input::new(args.source, args.path).map_err(usage)?;

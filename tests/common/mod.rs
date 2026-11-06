@@ -1,6 +1,7 @@
 //! Running the built binary in tests, the way people and agents do.
 #![allow(dead_code)] // each test file uses some of these
 
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -57,7 +58,6 @@ pub fn run_in(dir: &Path, args: &[&str], stdin: &[u8]) -> (i32, String, String) 
 
 /// Runs `cmd` in `dir` with `stdin` as input: exit code, stdout and stderr.
 pub fn feed(mut cmd: Command, dir: &Path, stdin: &[u8]) -> (i32, String, String) {
-    use std::io::Write;
     (cmd.current_dir(dir).stdin(Stdio::piped()))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -244,4 +244,21 @@ pub fn keys(v: &Value) -> Vec<&str> {
     let mut keys: Vec<_> = v.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
     keys
+}
+
+/// A listener on a free port and every request it sees, on a thread of its own.
+pub fn canary() -> (String, std::sync::mpsc::Receiver<String>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (send, seen) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut stream = stream;
+            let mut head = vec![0; 512];
+            let n = stream.read(&mut head).unwrap_or(0);
+            let _ = send.send(String::from_utf8_lossy(&head[..n]).into_owned());
+            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        }
+    });
+    (url, seen)
 }

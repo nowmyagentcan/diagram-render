@@ -124,13 +124,11 @@ pub struct Lines<'a> {
 }
 
 impl<'a> Lines<'a> {
-    /// `network_path` for what a scan of this text found, at its place when it is in this text.
+    /// `network_path` for what a scan of this text found, at its place.
     pub fn refuse(&self, found: &Found) -> Error {
         let e = Error::network_path(&found.path);
-        match found.at.map(|at| self.locate(at)) {
-            Some((line, column)) => self.place(e, line, Some(column)),
-            None => e,
-        }
+        let (line, column) = self.locate(found.at);
+        self.place(e, line, Some(column))
     }
 
     pub fn new(text: &'a str) -> Self {

@@ -90,11 +90,13 @@ cat graph.dot | diagram-render - --format dot -o graph.svg --json
 - Graphviz `image=` files stay links in the SVG and are left out of PNGs.
 - Not read: PlantUML, Visio, or Markdown files with diagrams inside. Not written: PDF, JPEG or animated SVG.
 - It makes no network requests. The one exception is D2 with `--allow-network`, which fetches the image URLs written in your diagram. Without it, D2 SVGs keep those images as links, and D2 PNGs that need them stop with an error saying so.
-- A network path such as `//host/x.png` or `\\host\x.png` in a DOT or D2 diagram is refused with `network_path`, with or without `--allow-network`, because Windows would contact that host. So is a D2 icon that starts with a variable, unless the variable is an http(s) URL.
+- On Windows a path such as `//host/x.png` makes the system contact that host, so a DOT source naming one stops with `network_path`. A file link to a network path in a DOT diagram isn't caught.
+- On Windows a D2 diagram with imports, icons or images stops with `network_needed` unless you pass `--allow-network`, even for local files, because d2 can reach a network path through them. So can a variable used with `/`, `\` or `<`, and an `@` anywhere in the text is read as an import. With `--allow-network` D2 can also open network paths, so use it only on diagrams you trust.
+- MCP `path` and `output` refuse network paths on Windows; a path you type on the command line is opened as given. On Linux and macOS `//host/x.png` is a plain local path, and none of this applies.
 
 ## How it works
 
-Mermaid, DOT and D2 go to [merman](https://github.com/Latias94/merman), [Graphviz](https://graphviz.org) and [D2](https://github.com/d2lang/d2), each an unmodified program in `engines/`, run with a clean environment and a time limit.
+Mermaid, DOT and D2 go to [merman](https://github.com/Latias94/merman), [Graphviz](https://graphviz.org) and [D2](https://github.com/d2lang/d2), each an unmodified program in `engines/`, run with a clean environment, a time limit and a memory limit.
 BPMN, draw.io and Excalidraw are drawn by this tool's own Rust renderers, with geometry ported from [mxGraph](https://github.com/jgraph/drawio), [Excalidraw](https://github.com/excalidraw/excalidraw) and [rough.js](https://github.com/rough-stuff/rough).
 PNGs come from [resvg](https://github.com/linebender/resvg), or from merman's and d2's own rasterisers for their diagrams.
 
